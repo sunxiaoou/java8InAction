@@ -24,7 +24,7 @@ public class MyQuartz {
         Trigger trigger = newTrigger()
                 .withIdentity("trigger1", "group1")
                 // .withSchedule(cronSchedule("0 0/1 * * * ?"))
-                .withSchedule(cronSchedule("0 42 10 * * ?"))
+                .withSchedule(cronSchedule("0 50 10 * * ?"))
                 .build();
 
         // Schedule job with the trigger
