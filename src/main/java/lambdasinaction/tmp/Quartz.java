@@ -1,5 +1,7 @@
 package lambdasinaction.tmp;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.sun.org.slf4j.internal.Logger;
 import com.sun.org.slf4j.internal.LoggerFactory;
@@ -7,9 +9,11 @@ import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
 import org.quartz.impl.matchers.GroupMatcher;
 
+import java.io.*;
 import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.quartz.CronScheduleBuilder.cronSchedule;
 import static org.quartz.JobBuilder.newJob;
@@ -45,6 +49,19 @@ public class Quartz {
         } catch (SchedulerException | ParseException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private String jsonToCornStr(JSONObject cronJson) {
+        return (cronJson.containsKey("seconds") ? cronJson.getString("seconds") : "0") + " " +
+                (cronJson.containsKey("minutes") ? cronJson.getString("minutes") : "*") + " " +
+                (cronJson.containsKey("hours") ? cronJson.getString("hours") : "*") + " " +
+                (cronJson.containsKey("dayOfMonth") ? cronJson.getString("dayOfMonth") : "*") + " " +
+                (cronJson.containsKey("month") ? cronJson.getString("month") : "*") + " " +
+                (cronJson.containsKey("dayOfWeek") ? cronJson.getString("dayOfWeek") : "?");
+    }
+
+    public void addJob(String name, String group, JSONObject cronJson, Class<? extends Job> jobClass) {
+        addJob(name, group, jsonToCornStr(cronJson), jobClass);
     }
 
     public boolean deleteJobs(String group) {
@@ -88,32 +105,29 @@ public class Quartz {
         return jsonObject;
     }
 
-    public static String jsonToCornStr(JSONObject cronJson) {
-        return (cronJson.containsKey("seconds") ? cronJson.getString("seconds") : "0") + " " +
-                (cronJson.containsKey("minutes") ? cronJson.getString("minutes") : "*") + " " +
-                (cronJson.containsKey("hours") ? cronJson.getString("hours") : "*") + " " +
-                (cronJson.containsKey("dayOfMonth") ? cronJson.getString("dayOfMonth") : "*") + " " +
-                (cronJson.containsKey("month") ? cronJson.getString("month") : "*") + " " +
-                (cronJson.containsKey("dayOfWeek") ? cronJson.getString("dayOfWeek") : "?");
-    }
 
-    public static void main(String[] args) {
-        // String cronStr = "0 31 17 * * ?";
-        // String cronStr = "0 0/1 * * * ?";
-        String cronStr = "0/5 * * * * ?";
-        JSONObject cronJson = Quartz.cronStrToJson(cronStr);
-        System.out.println(Quartz.cronStrToJson(cronStr).toString());
-        System.out.println(Quartz.jsonToCornStr(cronJson));
+    public static void main(String[] args) throws IOException {
+        String path = "target/classes/lambdasinaction/tmp/schemaMap_policy.json";
+        BufferedReader br = new BufferedReader(new FileReader(path));
+        String jsonString = br.lines().collect(Collectors.joining("\n"));
+        JSONArray cronExpr = JSON.parseObject(jsonString)
+                .getJSONObject("policy")
+                .getJSONArray("cronExpr");
+        // System.out.println(cronExpr);
+
         try {
             Quartz quartz = new Quartz();
-            quartz.addJob(String.valueOf(1), "JobA", cronStr, JobA.class);
+            int i = 0;
+            for (Object cron: cronExpr) {
+                quartz.addJob(String.valueOf(i), "JobA", (JSONObject)cron, JobA.class);
+                i ++;
+            }
+            quartz.showJobKeys("JobA");
             quartz.start();
             System.out.println("started");
             TimeUnit.SECONDS.sleep(12);
-            // quartz.addJob(String.valueOf(1), "JobB", "0/10 * * * * ?", JobB.class);
-            quartz.addJob(String.valueOf(2), "JobA", "0/10 * * * * ?", JobA.class);
-            quartz.addJob(String.valueOf(1), "JobB", "0/10 * * * * ?", JobB.class);
-            quartz.showJobKeys("JobA");
+            // quartz.addJob(String.valueOf(2), "JobA", "0/10 * * * * ?", JobA.class);
+            quartz.addJob(String.valueOf(0), "JobB", "0/10 * * * * ?", JobB.class);
             TimeUnit.SECONDS.sleep(12);
             quartz.deleteJobs("JobA");
             System.out.println("deleted JobA");
