@@ -11,6 +11,7 @@ import org.quartz.impl.matchers.GroupMatcher;
 
 import java.io.*;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -20,7 +21,7 @@ import static org.quartz.JobBuilder.newJob;
 import static org.quartz.TriggerBuilder.newTrigger;
 
 public class Quartz {
-    private static final Logger LOG = LoggerFactory.getLogger(Scheduler.class);
+    private static final Logger LOG = LoggerFactory.getLogger(Quartz.class);
     private final Scheduler scheduler;
 
     public Quartz() {
@@ -113,21 +114,25 @@ public class Quartz {
         JSONArray cronExpr = JSON.parseObject(jsonString)
                 .getJSONObject("policy")
                 .getJSONArray("cronExpr");
+        LOG.debug(cronExpr.toString());
         // System.out.println(cronExpr);
 
         try {
             Quartz quartz = new Quartz();
+            quartz.start();
+            String time = new SimpleDateFormat("yy-MM-dd HH-mm-ss").format(new Date());
+            System.out.println("Quartz start at: " + time);
+            TimeUnit.SECONDS.sleep(5);
             int i = 0;
             for (Object cron: cronExpr) {
                 quartz.addJob(String.valueOf(i), "JobA", (JSONObject)cron, JobA.class);
                 i ++;
             }
             quartz.showJobKeys("JobA");
-            quartz.start();
-            System.out.println("started");
             TimeUnit.SECONDS.sleep(12);
             // quartz.addJob(String.valueOf(2), "JobA", "0/10 * * * * ?", JobA.class);
-            quartz.addJob(String.valueOf(0), "JobB", "0/10 * * * * ?", JobB.class);
+            // quartz.addJob(String.valueOf(0), "JobB", "0/10 * * * * ?", JobB.class);
+            quartz.addJob(String.valueOf(0), "JobB", "6/7 * * * * ?", JobB.class);
             TimeUnit.SECONDS.sleep(12);
             quartz.deleteJobs("JobA");
             System.out.println("deleted JobA");
