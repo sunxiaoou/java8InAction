@@ -3,13 +3,15 @@ package lambdasinaction.tmp;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.sun.org.slf4j.internal.Logger;
-import com.sun.org.slf4j.internal.LoggerFactory;
 import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
 import org.quartz.impl.matchers.GroupMatcher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -61,14 +63,36 @@ public class Quartz {
                 (cronJson.containsKey("dayOfWeek") ? cronJson.getString("dayOfWeek") : "?");
     }
 
-    public void addJob(String name, String group, JSONObject cronJson, Class<? extends Job> jobClass) {
-        addJob(name, group, jsonToCornStr(cronJson), jobClass);
+    public void addJob(String group, JSONArray expressions, Class<? extends Job> jobClass) {
+        int i = 0;
+        for (Object expression: expressions) {
+            addJob(String.valueOf(i), group, jsonToCornStr((JSONObject)expression), jobClass);
+            i ++;
+        }
     }
 
     public boolean deleteJobs(String group) {
         try {
             Set<JobKey> jobKeys = scheduler.getJobKeys(GroupMatcher.groupEquals(group));
             return scheduler.deleteJobs(new ArrayList<>(jobKeys));
+        } catch (SchedulerException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void pauseJobs(String group) {
+        try {
+            scheduler.pauseJobs(GroupMatcher.groupEquals(group));
+            LOG.debug("group {}'s jobs paused", group);
+        } catch (SchedulerException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void resumeJobs(String group) {
+        try {
+            scheduler.resumeJobs(GroupMatcher.groupEquals(group));
+            LOG.debug("group {}'s jobs resumed", group);
         } catch (SchedulerException e) {
             throw new RuntimeException(e);
         }
@@ -123,19 +147,20 @@ public class Quartz {
             String time = new SimpleDateFormat("yy-MM-dd HH-mm-ss").format(new Date());
             System.out.println("Quartz start at: " + time);
             TimeUnit.SECONDS.sleep(5);
-            int i = 0;
-            for (Object cron: cronExpr) {
-                quartz.addJob(String.valueOf(i), "JobA", (JSONObject)cron, JobA.class);
-                i ++;
-            }
+            quartz.addJob("JobA", cronExpr, JobA.class);
             quartz.showJobKeys("JobA");
             TimeUnit.SECONDS.sleep(12);
             // quartz.addJob(String.valueOf(2), "JobA", "0/10 * * * * ?", JobA.class);
             // quartz.addJob(String.valueOf(0), "JobB", "0/10 * * * * ?", JobB.class);
             quartz.addJob(String.valueOf(0), "JobB", "6/7 * * * * ?", JobB.class);
             TimeUnit.SECONDS.sleep(12);
-            quartz.deleteJobs("JobA");
-            System.out.println("deleted JobA");
+            // boolean b = quartz.deleteJobs("JobA");
+            // System.out.println("deleted JobA " + b);
+            quartz.pauseJobs("JobA");
+            System.out.println("paused JobA");
+            TimeUnit.SECONDS.sleep(20);
+            quartz.resumeJobs("JobA");
+            System.out.println("resumed JobA");
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
