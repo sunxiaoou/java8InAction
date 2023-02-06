@@ -1,40 +1,31 @@
 {
-    "schemaMap": [
+    "entireDbSync": false,
+    "schemaMap": {
+        "portfolio": "portfolio",
+        "finance": "finance"
+    },
+    "tableMap": [
         {
-            "source": "db1", "target": "tgtDb1",
-            "tabMap": [
-                {
-                    "source": "tab11", "target": "tgtTab11",
-                    "colMap": [
-                        {"op": "a", "expr": "col1+col2", "colName": "newCol", "colType": "int"},
-                        {"op": "d", "expr": "col3"},
-                        {"op": "m", "expr": "col1+10", "colName": "col1"},
-                        {"op": "u", "expr": "col5"},
-                        {"syncByDefault": false}
-                    ]
-                },
-                {
-                    "source": "tab12", "target": "tgtTab12",
-                    "colMap": [
-                        {"op": "m", "expr": "col21", "colName": "newCol21"},
-                        {"op": "d", "expr": "col21"},
-                        {"syncByDefault": true}
-                    ]
-                },
-                { "source": "tab13", "target": "tgtTab13" },
-                { "syncByDefault": false }
+            "srcSchema": "portfolio", "srcTable": "threshold", "tgtSchema": "portfolio", "tgtTable": "threshold",
+            "colMap": [
+                { "syncByDefault": false },
+                { "op": "u", "expr": "code" },
+                { "op": "u", "expr": "name" },
+                { "op": "u", "expr": "reference" }
             ]
         },
         {
-            "source": "db2", "target": "tgtDb2",
-            "tabMap": [
-                { "source": "tab21", "target": "tgtTab21" },
-                { "source": "tab22", "target": "tgtTab22" },
-                { "syncByDefault": false }
+            "srcSchema": "portfolio", "srcTable": "cvtbone_daily", "tgtSchema": "portfolio", "tgtTable": "cvtbone_daily",
+            "colMap": [
+                { "syncByDefault": true },
+                { "op": "d", "expr": "high" },
+                { "op": "d", "expr": "low" },
+                { "op": "d", "expr": "volume" }
             ]
         },
-        { "source": "db3", "target": "tgtDb3"},
-        { "syncByDefault": false }
+        { "srcSchema": "portfolio", "srcTable": "valuation", "tgtSchema": "portfolio", "tgtTable": "valuation" },
+        { "srcSchema": "manga", "srcTable": "fruit", "tgtSchema": "manga", "tgtTable": "fruit" },
+        { "srcSchema": "manga", "srcTable": "export", "tgtSchema": "tgtDb2", "tgtTable": "export" }
     ],
     "policy": {
         "type":"periodic",
