@@ -35,19 +35,26 @@ public class Parser {
         System.out.println(tables);
 
         MyJDBC jdbc = new MyJDBC("localhost", "", "manga", "manga");
-        List<String> tables_to_sync = new ArrayList<>();
+        List<String> tables2Sync = new ArrayList<>();
+        List<String> schemaList = jdbc.schemaList();
+        List<String> unknownSchema = new ArrayList<>();
+        List<String> unknownTables = new ArrayList<>();
+
         List<String> exclusive = new ArrayList<>(Arrays.asList("information_schema", "metastore"));
-        for (String db: jdbc.db_list()) {
-            if (! exclusive.contains(db)) {
-                for (String tab : jdbc.tab_list(db)) {
-                    String table = db + "." + tab;
-                    if (entireDbSync || schemas.contains(db) || tables.contains(table)) {
-                        tables_to_sync.add(table);
+
+
+        for (String schema: schemaList) {
+            if (! exclusive.contains(schema)) {
+                List<String> tabList = jdbc.tabList(schema);
+                for (String tab : tabList) {
+                    String table = schema + "." + tab;
+                    if (entireDbSync || schemas.contains(schema) || tables.contains(table)) {
+                        tables2Sync.add(table);
                     }
                 }
             }
         }
-        System.out.println(tables_to_sync);
+        System.out.println(tables2Sync);
         jdbc.close();
     }
 }

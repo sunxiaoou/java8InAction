@@ -15,7 +15,7 @@ public class MyJDBC {
         return connection;
     }
 
-    public List<String> db_list() throws SQLException {
+    public List<String> schemaList() throws SQLException {
         Statement st = connection.createStatement();
         ResultSet rs = st.executeQuery("SHOW DATABASES");
         List<String> databases = new ArrayList<>();
@@ -25,7 +25,7 @@ public class MyJDBC {
         return databases;
     }
 
-    public List<String> tab_list(String dbName) throws SQLException {
+    public List<String> tabList(String dbName) throws SQLException {
         connection.setCatalog(dbName);
         Statement st = connection.createStatement();
         ResultSet rs = st.executeQuery("SHOW TABLES");
@@ -36,12 +36,29 @@ public class MyJDBC {
         return tables;
     }
 
+    public List<String> viewList(String dbName) throws SQLException {
+        connection.setCatalog(dbName);
+        Statement st = connection.createStatement();
+        ResultSet rs = st.executeQuery("show full tables where table_type = 'view'");
+        List<String> views = new ArrayList<>();
+        while (rs.next()) {
+            views.add(rs.getString(1));
+        }
+        return views;
+    }
+
+    public void close() throws SQLException {
+        connection.close();
+    }
+
     public static void main(String... argv) {
         MyJDBC jdbc;
         try {
             jdbc = new MyJDBC("localhost", "", "manga", "manga");
-            jdbc.db_list().forEach(System.out::println);
-            jdbc.tab_list("manga").forEach(System.out::println);
+            jdbc.schemaList().forEach(System.out::println);
+            jdbc.tabList("manga").forEach(System.out::println);
+            jdbc.viewList("manga").forEach(System.out::println);
+            jdbc.close();
             System.exit(1);
 
             jdbc = new MyJDBC("localhost", "manga", "manga", "manga");
@@ -51,7 +68,7 @@ public class MyJDBC {
             while (resultSet.next()) {
                 System.out.println(resultSet.getString("name"));
             }
-            connection.close();
+            jdbc.close();
         } catch (SQLException e) {
             e.printStackTrace();
         }

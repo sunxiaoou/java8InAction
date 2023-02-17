@@ -2,7 +2,8 @@
     "entireDbSync": false,
     "schemaMap": {
         "portfolio": "portfolio",
-        "finance": "finance"
+        "finance": "finance",
+        "foo": "foo"
     },
     "tableMap": [
         {
@@ -25,7 +26,8 @@
         },
         { "srcSchema": "portfolio", "srcTable": "valuation", "tgtSchema": "portfolio", "tgtTable": "valuation" },
         { "srcSchema": "manga", "srcTable": "fruit", "tgtSchema": "manga", "tgtTable": "fruit" },
-        { "srcSchema": "manga", "srcTable": "export", "tgtSchema": "tgtDb2", "tgtTable": "export" }
+        { "srcSchema": "manga", "srcTable": "export", "tgtSchema": "tgtDb2", "tgtTable": "export" },
+        { "srcSchema": "manga", "srcTable": "bar", "tgtSchema": "tgtDb2", "tgtTable": "bar" }
     ],
     "policy": {
         "type":"periodic",
