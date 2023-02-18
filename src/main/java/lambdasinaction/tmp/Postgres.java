@@ -118,9 +118,12 @@ public class Postgres {
 
     public Tree partitionTree(String schema, String partitionTable) throws SQLException {
         Statement statement = conn.createStatement();
-        String sql = String.format("select * from pg_partition_tree('%s.%s')",
-                schema, partitionTable);
-        List<String> tables = new ArrayList<>();
+        String sql = String.format(
+                "select relid, parentrelid, level, " +
+                        "pg_get_partkeydef(relid) as keydef, " +
+                        "pg_get_expr(relpartbound, oid) as bound " +
+                        "from pg_partition_tree('%s.%s') " +
+                        "left join pg_class on pg_class.oid = relid", schema, partitionTable);
         ResultSet rs = statement.executeQuery(sql);
         if (! rs.isBeforeFirst()) {
             System.out.println("No partition");
@@ -130,12 +133,13 @@ public class Postgres {
         while (rs.next()) {
             String name = rs.getString("relid");
             String parent = rs.getString("parentrelid");
-            boolean leaf = rs.getBoolean("isleaf");
+            String keyDef = rs.getString("keydef");
+            String bound = rs.getString("bound");
             int level = rs.getInt("level");
             if (level == 0) {
-                tree = new Tree(name, new Pair<>(leaf, level));
+                tree = new Tree(name, new Pair<>(keyDef, bound));
             } else if (tree != null) {
-                tree.addChild(parent, name, new Pair<>(leaf, level));
+                tree.addChild(parent, name, new Pair<>(keyDef, bound));
             }
         }
         return tree;
@@ -150,7 +154,6 @@ public class Postgres {
             System.out.println(pg.inhTables("manga", "customers"));
             Tree tree = pg.partitionTree("manga", "customers");
             tree.preOrder(null);
-            pg.partition2("manga", "customers");
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
