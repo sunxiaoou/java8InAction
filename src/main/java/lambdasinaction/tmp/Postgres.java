@@ -49,7 +49,7 @@ public class Postgres {
 
     public List<String> inhTables(String schema, String partitionTable) throws SQLException {
         Statement statement = conn.createStatement();
-        String sql = String.format("select relid from pg_partition_tree('%s.%s') where level != 0",
+        String sql = String.format("select relid from pg_partition_tree('%s.%s') where isleaf = true",
                 schema, partitionTable);
         List<String> tables = new ArrayList<>();
         ResultSet rs = statement.executeQuery(sql);
@@ -116,15 +116,41 @@ public class Postgres {
         System.out.println(inhTables);
     }
 
+    public Tree partitionTree(String schema, String partitionTable) throws SQLException {
+        Statement statement = conn.createStatement();
+        String sql = String.format("select * from pg_partition_tree('%s.%s')",
+                schema, partitionTable);
+        List<String> tables = new ArrayList<>();
+        ResultSet rs = statement.executeQuery(sql);
+        if (! rs.isBeforeFirst()) {
+            System.out.println("No partition");
+            return null;
+        }
+        Tree tree = null;
+        while (rs.next()) {
+            String name = rs.getString("relid");
+            String parent = rs.getString("parentrelid");
+            boolean leaf = rs.getBoolean("isleaf");
+            int level = rs.getInt("level");
+            if (level == 0) {
+                tree = new Tree(name, new Pair<>(leaf, level));
+            } else if (tree != null) {
+                tree.addChild(parent, name, new Pair<>(leaf, level));
+            }
+        }
+        return tree;
+    }
 
     public static void main(String... argv) {
         Postgres pg;
         try {
-            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
-//            pg.schemaList().forEach(System.out::println);
+            // pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
+            pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
             System.out.println(pg.tabList2("manga"));
-            System.out.println(pg.inhTables("manga", "ptt"));
-            pg.partition2("manga", "ptt");
+            System.out.println(pg.inhTables("manga", "customers"));
+            Tree tree = pg.partitionTree("manga", "customers");
+            tree.preOrder(null);
+            pg.partition2("manga", "customers");
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
