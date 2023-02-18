@@ -47,11 +47,24 @@ public class Postgres {
         return tables;
     }
 
+    public List<String> inhTables(String schema, String partitionTable) throws SQLException {
+        Statement statement = conn.createStatement();
+        String sql = String.format("select relid from pg_partition_tree('%s.%s') where level != 0",
+                schema, partitionTable);
+        List<String> tables = new ArrayList<>();
+        ResultSet rs = statement.executeQuery(sql);
+        while (rs.next()) {
+            tables.add(rs.getString("relid"));
+        }
+        return tables;
+    }
+
     public void partition(String schema, String partitionTable) throws SQLException {
         Statement statement = conn.createStatement();
         String sql = String.format("select inhrelid, inhparent, relname, relpartbound from pg_inherits " +
                 "join pg_class on pg_inherits.inhrelid = pg_class.oid " +
-                "where inhparent = '%s.%s'::regclass", schema, partitionTable);
+                "where inhparent = '%s.%s'::regclass",
+                schema, partitionTable);
         ResultSet rs = statement.executeQuery(sql);
         Map<String, String> inhTables = new HashMap<>() ;
         int inhParent = -1;
@@ -83,6 +96,10 @@ public class Postgres {
         ResultSet rs = statement.executeQuery(sql);
         Map<String, String> inhTables = new HashMap<>() ;
         int inhParent = -1;
+        if (! rs.isBeforeFirst()) {
+            System.out.println("No data");
+            return;
+        }
         while (rs.next()) {
             inhParent = rs.getInt("inhparent");
             inhTables.put(rs.getString("relname"), rs.getString("bound"));
@@ -106,6 +123,7 @@ public class Postgres {
             pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
 //            pg.schemaList().forEach(System.out::println);
             System.out.println(pg.tabList2("manga"));
+            System.out.println(pg.inhTables("manga", "ptt"));
             pg.partition2("manga", "ptt");
             pg.close();
         } catch (SQLException e) {
