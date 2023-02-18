@@ -36,14 +36,33 @@ public class Postgres {
         return tables;
     }
 
-    public Map<String, String> tabList2(String schema) throws SQLException {
+    public List<String> tabList2(String schema) throws SQLException {
         DatabaseMetaData metaData = conn.getMetaData();
         ResultSet rs = metaData.getTables(null, schema, null,
                 new String[]{"TABLE", "PARTITIONED TABLE"});
-        Map<String, String> tables = new HashMap<>();
+        List<String> tables = new ArrayList<>();
         while (rs.next()) {
-            tables.put(rs.getString(3),rs.getString(4));
+            tables.add(rs.getString(3));
         }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("(");
+        for (String s : tables) {
+            sb.append("'").append(s).append("', ");
+        }
+        sb.delete(sb.length() - 2, sb.length());
+        sb.append(")");
+
+        Statement statement = conn.createStatement();
+        String sql = "select relname, relispartition from pg_class where relname in " + sb.toString();
+        rs = statement.executeQuery(sql);
+        tables = new ArrayList<>();
+        while (rs.next()) {
+            if (! rs.getBoolean("relispartition")) {
+                tables.add(rs.getString("relname"));
+            }
+        }
+
         return tables;
     }
 
