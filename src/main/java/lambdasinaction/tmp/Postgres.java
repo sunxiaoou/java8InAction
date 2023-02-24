@@ -2,6 +2,7 @@ package lambdasinaction.tmp;
 
 import java.sql.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Postgres {
     private final Connection conn;
@@ -15,16 +16,6 @@ public class Postgres {
         conn.close();
     }
 
-    public List<String> schemaList() throws SQLException {
-        Statement st = conn.createStatement();
-        ResultSet rs = st.executeQuery("SHOW DATABASES");
-        List<String> databases = new ArrayList<>();
-        while (rs.next()) {
-            databases.add(rs.getString(1));
-        }
-        return databases;
-    }
-
     public List<String> tabList(String schema) throws SQLException {
         String sql = String.format("select * from information_schema.tables where table_schema = '%s';", schema);
         Statement st = conn.createStatement();
@@ -36,10 +27,9 @@ public class Postgres {
         return tables;
     }
 
-    public List<String> tabList2(String schema) throws SQLException {
+    public List<String> tabList2(String schema, String pattern, String[] types) throws SQLException {
         DatabaseMetaData metaData = conn.getMetaData();
-        ResultSet rs = metaData.getTables(null, schema, null,
-                new String[]{"TABLE", "PARTITIONED TABLE"});
+        ResultSet rs = metaData.getTables(null, schema, pattern, types);
         List<String> tables = new ArrayList<>();
         while (rs.next()) {
             tables.add(rs.getString(3));
@@ -78,61 +68,32 @@ public class Postgres {
         return tables;
     }
 
-    public void partition(String schema, String partitionTable) throws SQLException {
-        Statement statement = conn.createStatement();
-        String sql = String.format("select inhrelid, inhparent, relname, relpartbound from pg_inherits " +
-                "join pg_class on pg_inherits.inhrelid = pg_class.oid " +
-                "where inhparent = '%s.%s'::regclass",
-                schema, partitionTable);
-        ResultSet rs = statement.executeQuery(sql);
-        Map<String, String> inhTables = new HashMap<>() ;
-        int inhParent = -1;
+    private void parseColumnMetaForGetTableColumns(ResultSet rs, List<ColumnMeta> columnMetaList) throws SQLException {
+        ResultSetMetaData metaData = rs.getMetaData();
         while (rs.next()) {
-            inhParent = rs.getInt("inhparent");
-            inhTables.put(rs.getString("relname"), rs.getString("relpartbound"));
+            ColumnMeta columnMeta = new ColumnMeta(rs.getString(4));
+            columnMeta.setType(rs.getInt(5));
+            columnMeta.setTypeName(rs.getString(6));
+            columnMeta.setLength(Long.valueOf(rs.getObject(7).toString()));
+            columnMeta.setPrecision(Long.valueOf(rs.getObject(7).toString()));
+            columnMeta.setScale((Integer) (rs.getObject(9)));
+            columnMeta.setNullable(rs.getInt(11));
+            columnMeta.setRemarks(rs.getString(12));
+            columnMeta.setDefaultValues(rs.getString(13));
+            if (metaData.getColumnCount() >= 23) {
+                columnMeta.setAutoIncrement(rs.getString(23));
+            }
+            columnMetaList.add(columnMeta);
         }
-
-        System.out.println(String.format("%s.%s(%d)", schema, partitionTable, inhParent));
-        sql = String.format("select * from pg_catalog.pg_partitioned_table where partrelid=%d", inhParent);
-        rs = statement.executeQuery(sql);
-        Map<String, String> attrs = new HashMap<>();
-        while (rs.next()) {
-            attrs.put("partstrat", rs.getString("partstrat"));
-            attrs.put("partnatts", rs.getString("partnatts"));
-            attrs.put("partdefid", rs.getString("partdefid"));
-            attrs.put("partattrs", rs.getString("partattrs"));
-        }
-        System.out.println(attrs);
-        System.out.println(inhTables);
     }
 
-    public void partition2(String schema, String partitionTable) throws SQLException {
-        Statement statement = conn.createStatement();
-        String sql = String.format(
-                "select inhparent, relname, pg_get_expr(relpartbound, inhrelid) as bound from pg_inherits " +
-                "join pg_class on pg_inherits.inhrelid = pg_class.oid " +
-                "where inhparent = '%s.%s'::regclass", schema, partitionTable);
-        ResultSet rs = statement.executeQuery(sql);
-        Map<String, String> inhTables = new HashMap<>() ;
-        int inhParent = -1;
-        if (! rs.isBeforeFirst()) {
-            System.out.println("No data");
-            return;
+    public List<ColumnMeta> getTableColumns(String schemaName, String tableName) throws SQLException {
+        DatabaseMetaData metaData = conn.getMetaData();
+        List<ColumnMeta> columnMetaList = new ArrayList<>();
+        try (ResultSet rs = metaData.getColumns(null, schemaName, tableName, null)) {
+            parseColumnMetaForGetTableColumns(rs, columnMetaList);
         }
-        while (rs.next()) {
-            inhParent = rs.getInt("inhparent");
-            inhTables.put(rs.getString("relname"), rs.getString("bound"));
-        }
-
-        sql = String.format("select pg_get_partkeydef(%d) as keydef", inhParent);
-        rs = statement.executeQuery(sql);
-        String keyDef = null;
-        while (rs.next()) {
-            keyDef = rs.getString("keydef");
-        }
-        System.out.println(String.format("%s.%s(%d)", schema, partitionTable, inhParent));
-        System.out.println(keyDef);
-        System.out.println(inhTables);
+        return columnMetaList;
     }
 
     public Tree partitionTree(String schema, String partitionTable) throws SQLException {
@@ -164,15 +125,59 @@ public class Postgres {
         return tree;
     }
 
+    public List<Map<String, Object>> partitionMap(String schema, String partitionTable) throws SQLException {
+        Statement statement = conn.createStatement();
+        String sql = String.format(
+                "select relid, parentrelid, isleaf, level, " +
+                        "pg_get_partkeydef(relid) as keydef, " +
+                        "pg_get_expr(relpartbound, oid) as bound " +
+                        "from pg_partition_tree('%s.%s') " +
+                        "left join pg_class on pg_class.oid = relid", schema, partitionTable);
+        ResultSet rs = statement.executeQuery(sql);
+        if (! rs.isBeforeFirst()) {
+            System.out.println("No partition");
+            return null;
+        }
+        List<Map<String, Object>> list = new ArrayList<>();
+        while (rs.next()) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("name", rs.getString("relid"));
+            map.put("parent", rs.getString("parentrelid"));
+            map.put("isLeaf", rs.getBoolean("isleaf"));
+            map.put("level", rs.getInt("level"));
+            map.put("keyDef", rs.getString("keydef"));
+            map.put("bound", rs.getString("bound"));
+            list.add(map);
+        }
+        return list;
+    }
+
+    public Tree partitionTree2(List<Map<String, Object>> list) {
+        Tree tree = null;
+        for (Map<String, Object> map: list) {
+            if ((int) map.get("level") == 0) {
+                tree = new Tree((String) map.get("name"),
+                        new Pair<>(map.get("keyDef"), map.get("bound")));
+            } else if (tree != null) {
+                tree.addChild((String) map.get("parent"), (String) map.get("name"),
+                        new Pair<>(map.get("keyDef"), map.get("bound")));
+            }
+        }
+        return tree;
+    }
+
+
     public static void main(String... argv) {
         Postgres pg;
         try {
-            // pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
-            pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
-            System.out.println(pg.tabList2("manga"));
-            System.out.println(pg.inhTables("manga", "customers"));
-            Tree tree = pg.partitionTree("manga", "customers");
-            tree.preOrder(null);
+            // pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
+            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
+            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
+            System.out.println(pg.tabList2("manga", null, types));
+//            System.out.println(pg.inhTables("manga", "customers"));
+//            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
+//            System.out.println(pg.partitionTree2(map));
+            System.out.println(pg.getTableColumns("manga", "students"));
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
