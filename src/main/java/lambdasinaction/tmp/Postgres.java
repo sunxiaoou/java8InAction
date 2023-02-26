@@ -42,9 +42,9 @@ public class Postgres {
         sb.delete(sb.length() - 2, sb.length());
         sb.append(")");
 
-        Statement statement = conn.createStatement();
+        Statement stat = conn.createStatement();
         String sql = "select relname, relispartition from pg_class where relname in " + sb.toString();
-        rs = statement.executeQuery(sql);
+        rs = stat.executeQuery(sql);
         tables = new ArrayList<>();
         while (rs.next()) {
             if (! rs.getBoolean("relispartition")) {
@@ -56,79 +56,79 @@ public class Postgres {
     }
 
     public List<String> inhTables(String schema, String partitionTable) throws SQLException {
-        Statement statement = conn.createStatement();
+        Statement stat = conn.createStatement();
         String sql = String.format("select relid from pg_partition_tree('%s.%s') where isleaf = true",
                 schema, partitionTable);
         List<String> tables = new ArrayList<>();
-        ResultSet rs = statement.executeQuery(sql);
+        ResultSet rs = stat.executeQuery(sql);
         while (rs.next()) {
             tables.add(rs.getString("relid"));
         }
         return tables;
     }
 
-    private void parseColumnMetaForGetTableColumns(ResultSet rs, List<ColumnMeta> columnMetaList) throws SQLException {
+    private void parseColumnMetaForGetTableColumns(ResultSet rs, List<ColumnMeta> columnList) throws SQLException {
         ResultSetMetaData metaData = rs.getMetaData();
         while (rs.next()) {
-            ColumnMeta columnMeta = new ColumnMeta(rs.getString(4));
-            columnMeta.setType(rs.getInt(5));
-            columnMeta.setTypeName(rs.getString(6));
-            columnMeta.setLength(Long.valueOf(rs.getObject(7).toString()));
-            columnMeta.setPrecision(Long.valueOf(rs.getObject(7).toString()));
-            columnMeta.setScale((Integer) (rs.getObject(9)));
-            columnMeta.setNullable(rs.getInt(11));
-            columnMeta.setRemarks(rs.getString(12));
-            columnMeta.setDefaultValues(rs.getString(13));
+            ColumnMeta column = new ColumnMeta(rs.getString(4));
+            column.setType(rs.getInt(5));
+            column.setTypeName(rs.getString(6));
+            column.setLength(Long.valueOf(rs.getObject(7).toString()));
+            column.setPrecision(Long.valueOf(rs.getObject(7).toString()));
+            column.setScale((Integer) (rs.getObject(9)));
+            column.setNullable(rs.getInt(11));
+            column.setRemarks(rs.getString(12));
+            column.setDefaultValues(rs.getString(13));
             if (metaData.getColumnCount() >= 23) {
-                columnMeta.setAutoIncrement(rs.getString(23));
+                column.setAutoIncrement(rs.getString(23));
             }
-            columnMetaList.add(columnMeta);
+            columnList.add(column);
         }
     }
 
-    public List<ColumnMeta> getTableColumns(String schemaName, String tableName) throws SQLException {
+    public List<ColumnMeta> getTableColumns(String schema, String tableName) throws SQLException {
         DatabaseMetaData metaData = conn.getMetaData();
-        List<ColumnMeta> columnMetaList = new ArrayList<>();
-        try (ResultSet rs = metaData.getColumns(null, schemaName, tableName, null)) {
-            parseColumnMetaForGetTableColumns(rs, columnMetaList);
+        List<ColumnMeta> columnList = new ArrayList<>();
+        try (ResultSet rs = metaData.getColumns(null, schema, tableName, null)) {
+            parseColumnMetaForGetTableColumns(rs, columnList);
         }
-        return columnMetaList;
+        return columnList;
     }
 
-    public List<ColumnMeta> getUdtColumns(String schemaName, String ubtName) throws SQLException {
-        Statement statement = conn.createStatement();
+    public List<ColumnMeta> getUdtColumns(String schema, String name) throws SQLException {
+        Statement stat = conn.createStatement();
         String sql = String.format(
                 "select attname, atttypid, attlen, attnotnull,atthasdef, attmissingval, typname " +
                         "from pg_attribute " +
                         "left join pg_type on atttypid = pg_type.oid " +
                         "where attrelid='%s.%s'::REGCLASS",
-                        schemaName, ubtName);
-        ResultSet rs = statement.executeQuery(sql);
-        List<ColumnMeta> columnMetas = new ArrayList<>();
+                        schema, name);
+        ResultSet rs = stat.executeQuery(sql);
+        List<ColumnMeta> columns = new ArrayList<>();
         while (rs.next()) {
-            ColumnMeta columnMeta = new ColumnMeta(rs.getString("attname"));
-            columnMeta.setType(rs.getInt("atttypid"));
-            columnMeta.setTypeName(rs.getString("typname"));
-            columnMeta.setLength(Long.valueOf(rs.getObject("attlen").toString()));
-            columnMeta.setPrecision(Long.valueOf(rs.getObject("attlen").toString()));
-            columnMeta.setScale(0);
-            columnMeta.setNullable(rs.getBoolean("attnotnull") ? 0 : 1);
-            columnMeta.setRemarks(null);
+            ColumnMeta column = new ColumnMeta(rs.getString("attname"));
+            column.setType(rs.getInt("atttypid"));
+            column.setTypeName(rs.getString("typname"));
+            column.setLength(Long.valueOf(rs.getObject("attlen").toString()));
+            column.setPrecision(Long.valueOf(rs.getObject("attlen").toString()));
+            column.setScale(0);
+            column.setNullable(rs.getBoolean("attnotnull") ? 0 : 1);
+            column.setRemarks(null);
             ArrayList<Object> array = (ArrayList<Object>) rs.getArray("attmissingval");
             if (array != null) {
-                columnMeta.setDefaultValues(rs.getArray("attmissingval").toString());
+                column.setDefaultValues(rs.getArray("attmissingval").toString());
             }
-            columnMetas.add(columnMeta);
+            columns.add(column);
         }
-        return columnMetas;
+        return columns;
     }
 
-    public String createUdtSql(String schema, String udt, List<ColumnMeta> columnMetas) {
+    public String createUdtSql(String schema, String name, List<ColumnMeta> columns) {
         StringBuilder sb = new StringBuilder()
-                .append("CREATE TYPE ").append(schema).append('.').append(udt).append(" AS (");
-        for (ColumnMeta columnMeta: columnMetas) {
-            sb.append(columnMeta.getName()).append(' ').append(columnMeta.getTypeName());
-            if (columnMeta.getNullable() != 1) {
+                .append("CREATE TYPE ").append(schema).append('.').append(name).append(" AS (");
+        for (ColumnMeta column: columns) {
+            sb.append(column.getName()).append(' ').append(column.getTypeName());
+            if (column.getNullable() != 1) {
                 sb.append(" NOT NULL");
             }
             sb.append(", ");
@@ -139,15 +139,57 @@ public class Postgres {
         return sb.toString();
     }
 
+    public List<String> getEnums(String schema) throws SQLException {
+        Statement stat = conn.createStatement();
+        String sql = String.format(
+                "select t.typname " +
+                        "from pg_type t " +
+                        "join pg_namespace n on n.oid = t.typnamespace " +
+                        "where t.typtype = 'e' and n.nspname = '%s'", schema);
+        ResultSet rs = stat.executeQuery(sql);
+        List<String> result = new ArrayList<>();
+        while (rs.next()) {
+            result.add(rs.getString("typname"));
+        }
+        return result;
+    }
+
+    public List<String> getEnumLabels(String name) throws SQLException {
+        Statement stat = conn.createStatement();
+        String sql = String.format(
+                "select e.enumlabel " +
+                        "from pg_type t " +
+                        "join pg_enum e on t.oid = e.enumtypid " +
+                        "where t.typname = '%s'", name);
+        ResultSet rs = stat.executeQuery(sql);
+        List<String> result = new ArrayList<>();
+        while (rs.next()) {
+            result.add(rs.getString("enumlabel"));
+        }
+        return result;
+    }
+
+    public String createEnumSql(String schema, String name, List<String> labels) {
+        StringBuilder sb = new StringBuilder()
+                .append("CREATE TYPE ").append(schema).append('.').append(name).append(" AS ENUM (");
+        for (String label: labels) {
+            sb.append("'").append(label).append("', ");
+        }
+        sb.delete(sb.length() - 2, sb.length());
+        sb.append(")");
+
+        return sb.toString();
+    }
+
     public Tree partitionTree(String schema, String partitionTable) throws SQLException {
-        Statement statement = conn.createStatement();
+        Statement stat = conn.createStatement();
         String sql = String.format(
                 "select relid, parentrelid, level, " +
                         "pg_get_partkeydef(relid) as keydef, " +
                         "pg_get_expr(relpartbound, oid) as bound " +
                         "from pg_partition_tree('%s.%s') " +
                         "left join pg_class on pg_class.oid = relid", schema, partitionTable);
-        ResultSet rs = statement.executeQuery(sql);
+        ResultSet rs = stat.executeQuery(sql);
         if (! rs.isBeforeFirst()) {
             System.out.println("No partition");
             return null;
@@ -169,14 +211,14 @@ public class Postgres {
     }
 
     public List<Map<String, Object>> partitionMap(String schema, String partitionTable) throws SQLException {
-        Statement statement = conn.createStatement();
+        Statement stat = conn.createStatement();
         String sql = String.format(
                 "select relid, parentrelid, isleaf, level, " +
                         "pg_get_partkeydef(relid) as keydef, " +
                         "pg_get_expr(relpartbound, oid) as bound " +
                         "from pg_partition_tree('%s.%s') " +
                         "left join pg_class on pg_class.oid = relid", schema, partitionTable);
-        ResultSet rs = statement.executeQuery(sql);
+        ResultSet rs = stat.executeQuery(sql);
         if (! rs.isBeforeFirst()) {
             System.out.println("No partition");
             return null;
@@ -219,10 +261,14 @@ public class Postgres {
 //            System.out.println(pg.inhTables("manga", "customers"));
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(pg.partitionTree2(map));
-            System.out.println(pg.getTableColumns("manga", "students"));
-            List<ColumnMeta> list = pg.getUdtColumns("manga", "communication");
-            System.out.println(list);
-            System.out.println(pg.createUdtSql("manga", "communication", list));
+//            System.out.println(pg.getTableColumns("manga", "students"));
+            List<ColumnMeta> columns = pg.getUdtColumns("manga", "communication");
+            System.out.println(columns);
+            System.out.println(pg.createUdtSql("manga", "communication", columns));
+            System.out.println(pg.getEnums("manga"));
+            List<String> labels = pg.getEnumLabels("bug_status");
+            System.out.println(labels);
+            System.out.println(pg.createEnumSql("manga", "bug_status", labels));
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
