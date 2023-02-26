@@ -2,7 +2,6 @@ package lambdasinaction.tmp;
 
 import java.sql.*;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Postgres {
     private final Connection conn;
@@ -96,6 +95,50 @@ public class Postgres {
         return columnMetaList;
     }
 
+    public List<ColumnMeta> getUdtColumns(String schemaName, String ubtName) throws SQLException {
+        Statement statement = conn.createStatement();
+        String sql = String.format(
+                "select attname, atttypid, attlen, attnotnull,atthasdef, attmissingval, typname " +
+                        "from pg_attribute " +
+                        "left join pg_type on atttypid = pg_type.oid " +
+                        "where attrelid='%s.%s'::REGCLASS",
+                        schemaName, ubtName);
+        ResultSet rs = statement.executeQuery(sql);
+        List<ColumnMeta> columnMetas = new ArrayList<>();
+        while (rs.next()) {
+            ColumnMeta columnMeta = new ColumnMeta(rs.getString("attname"));
+            columnMeta.setType(rs.getInt("atttypid"));
+            columnMeta.setTypeName(rs.getString("typname"));
+            columnMeta.setLength(Long.valueOf(rs.getObject("attlen").toString()));
+            columnMeta.setPrecision(Long.valueOf(rs.getObject("attlen").toString()));
+            columnMeta.setScale(0);
+            columnMeta.setNullable(rs.getBoolean("attnotnull") ? 0 : 1);
+            columnMeta.setRemarks(null);
+            ArrayList<Object> array = (ArrayList<Object>) rs.getArray("attmissingval");
+            if (array != null) {
+                columnMeta.setDefaultValues(rs.getArray("attmissingval").toString());
+            }
+            columnMetas.add(columnMeta);
+        }
+        return columnMetas;
+    }
+
+    public String createUdtSql(String schema, String udt, List<ColumnMeta> columnMetas) {
+        StringBuilder sb = new StringBuilder()
+                .append("CREATE TYPE ").append(schema).append('.').append(udt).append(" AS (");
+        for (ColumnMeta columnMeta: columnMetas) {
+            sb.append(columnMeta.getName()).append(' ').append(columnMeta.getTypeName());
+            if (columnMeta.getNullable() != 1) {
+                sb.append(" NOT NULL");
+            }
+            sb.append(", ");
+        }
+        sb.delete(sb.length() - 2, sb.length());
+        sb.append(")");
+
+        return sb.toString();
+    }
+
     public Tree partitionTree(String schema, String partitionTable) throws SQLException {
         Statement statement = conn.createStatement();
         String sql = String.format(
@@ -166,7 +209,6 @@ public class Postgres {
         return tree;
     }
 
-
     public static void main(String... argv) {
         Postgres pg;
         try {
@@ -178,6 +220,9 @@ public class Postgres {
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(pg.partitionTree2(map));
             System.out.println(pg.getTableColumns("manga", "students"));
+            List<ColumnMeta> list = pg.getUdtColumns("manga", "communication");
+            System.out.println(list);
+            System.out.println(pg.createUdtSql("manga", "communication", list));
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();

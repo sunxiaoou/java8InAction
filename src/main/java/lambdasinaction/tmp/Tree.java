@@ -1,9 +1,10 @@
 package lambdasinaction.tmp;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class Tree {
+public class Tree implements Serializable {
     static class Node {
         String name;
         Object data;
@@ -47,14 +48,22 @@ public class Tree {
     }
 
     // Preorder traversal
-    public void preOrder(Node node) {
+    public void preOrder(Node node, StringBuilder sb) {
         if (node == null) {
-            node = root;
+            return;
         }
-        System.out.println(node.name + " " + node.data);
+        // System.out.println(node.name + " " + node.data);
+        sb.append(node.name).append(" ").append(node.data).append("\n");
         for (Node child : node.children) {
-            preOrder(child);
+            preOrder(child, sb);
         }
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        preOrder(root, sb);
+        return sb.toString();
     }
 
     public static void main(String[] args) {
@@ -64,6 +73,6 @@ public class Tree {
         tree.addChild("root", "node03", null);
         tree.addChild("node02", "node021", null);
         System.out.println(tree.addChild("unknown", "unknown", null));
-        tree.preOrder(null);
+        System.out.println(tree);
     }
 }
