@@ -47,26 +47,24 @@ public class Parser {
         String path = "target/classes/lambdasinaction/tmp/schemaMap_policy.json";
         Parser parser = new Parser(path);
 
-        System.out.println("entireDbSync - " + parser.isEntire());
         List<String> jsonSchemas = parser.getSchemas();
-        System.out.println("jsonSchemas - " + jsonSchemas);
         List<String> jsonTables = parser.getTables();
+        System.out.println("entireDbSync - " + parser.isEntire());
+        System.out.println("jsonSchemas - " + jsonSchemas);
         System.out.println("jsonTables - " + jsonTables);
 
         MyJDBC db = new MyJDBC("localhost", "", "manga", "manga");
         List<String> dbSchemas = db.schemaList();
         System.out.println("dbSchemas - " + dbSchemas);
-        List<String> unknownSchema = jsonSchemas.stream()
-                .filter(s -> ! dbSchemas.contains(s))
-                .collect(Collectors.toList());
-        System.out.println("unknownSchema - " + unknownSchema);
-        List<String> exclusive = new ArrayList<>(Arrays.asList("information_schema", "metastore"));
+        List<String> exclusive = new ArrayList<>(Arrays.asList("information_schema", "metastore", "mysql"));
 
+        Set<String> schemaSet = new HashSet<>();
         List<String> tables = new ArrayList<>();
         for (String schema: dbSchemas) {
             if (! exclusive.contains(schema)) {
                 List<String> dbTables = db.tabList(schema);
                 for (String tab : dbTables) {
+                    schemaSet.add(schema);
                     String table = schema + "." + tab;
                     if (parser.isEntire() || jsonSchemas.contains(schema) || jsonTables.contains(table)) {
                         tables.add(schema + "." + tab);
@@ -74,8 +72,12 @@ public class Parser {
                 }
             }
         }
+        List<String> schemas = new ArrayList<>(schemaSet);
+        System.out.println("schemas - " + schemas);
         System.out.println("tables - " + tables);
+        List<String> unknownSchema = jsonSchemas.stream().filter(s -> ! schemas.contains(s)).collect(Collectors.toList());
         List<String> unknownTables = jsonTables.stream().filter(s -> ! tables.contains(s)).collect(Collectors.toList());
+        System.out.println("unknownSchema - " + unknownSchema);
         System.out.println("unknownTables - " + unknownTables);
 
         db.close();
