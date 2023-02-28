@@ -95,6 +95,20 @@ public class Postgres {
         return columnList;
     }
 
+    public List<String> getUdts(String schema) throws SQLException {
+        String sql = String.format(
+                "select user_defined_type_name " +
+                        "from information_schema.user_defined_types " +
+                        "where user_defined_type_schema ='%s'", schema);
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        List<String> names = new ArrayList<>();
+        while (rs.next()) {
+            names.add(rs.getString("user_defined_type_name"));
+        }
+        return names;
+    }
+
     public List<ColumnMeta> getUdtColumns(String schema, String name) throws SQLException {
         Statement stat = conn.createStatement();
         String sql = String.format(
@@ -140,12 +154,12 @@ public class Postgres {
     }
 
     public List<String> getEnums(String schema) throws SQLException {
-        Statement stat = conn.createStatement();
         String sql = String.format(
                 "select t.typname " +
                         "from pg_type t " +
                         "join pg_namespace n on n.oid = t.typnamespace " +
                         "where t.typtype = 'e' and n.nspname = '%s'", schema);
+        Statement stat = conn.createStatement();
         ResultSet rs = stat.executeQuery(sql);
         List<String> result = new ArrayList<>();
         while (rs.next()) {
@@ -154,13 +168,18 @@ public class Postgres {
         return result;
     }
 
-    public List<String> getEnumLabels(String name) throws SQLException {
+    public List<String> getEnumLabels(String schema, String name) throws SQLException {
         Statement stat = conn.createStatement();
+//        String sql = String.format(
+//                "select e.enumlabel " +
+//                        "from pg_type t " +
+//                        "join pg_enum e on t.oid = e.enumtypid " +
+//                        "where t.typname = '%s'", name);
         String sql = String.format(
-                "select e.enumlabel " +
-                        "from pg_type t " +
-                        "join pg_enum e on t.oid = e.enumtypid " +
-                        "where t.typname = '%s'", name);
+                "SELECT e.enumlabel FROM pg_catalog.pg_type t " +
+                        "JOIN pg_catalog.pg_enum e ON t.oid = e.enumtypid " +
+                        "WHERE t.typname = '%s' AND t.typnamespace = " +
+                        "(SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = '%s')", name, schema);
         ResultSet rs = stat.executeQuery(sql);
         List<String> result = new ArrayList<>();
         while (rs.next()) {
@@ -256,17 +275,18 @@ public class Postgres {
         try {
             // pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
             pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
-            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
-            System.out.println(pg.tabList2("manga", null, types));
+//            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
+//            System.out.println(pg.tabList2("manga", null, types));
 //            System.out.println(pg.inhTables("manga", "customers"));
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(pg.partitionTree2(map));
 //            System.out.println(pg.getTableColumns("manga", "students"));
+            System.out.println(pg.getUdts("manga"));
             List<ColumnMeta> columns = pg.getUdtColumns("manga", "communication");
             System.out.println(columns);
             System.out.println(pg.createUdtSql("manga", "communication", columns));
             System.out.println(pg.getEnums("manga"));
-            List<String> labels = pg.getEnumLabels("bug_status");
+            List<String> labels = pg.getEnumLabels("manga", "bug_status");
             System.out.println(labels);
             System.out.println(pg.createEnumSql("manga", "bug_status", labels));
             pg.close();
