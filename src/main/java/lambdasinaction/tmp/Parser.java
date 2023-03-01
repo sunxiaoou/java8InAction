@@ -43,15 +43,46 @@ public class Parser {
         return tables;
     }
 
+    public List<String> getTables(String schema) {
+        JSONArray tableMaps = obj.getJSONArray("tableMap");
+        List<String> tables = new ArrayList<>();
+        for (Object map: tableMaps) {
+            if (schema.equals(((JSONObject) map).getString("srcSchema"))) {
+                tables.add(((JSONObject) map).getString("srcTable"));
+            }
+        }
+        return tables;
+    }
+
+    public Pair<String, String> getMapped(String schema, String table) {
+        Map<String, String> schemaMap =
+                JSON.parseObject(obj.getJSONObject("schemaMap").toJSONString(), Map.class);
+        String mappedSchema = schema;
+        String mappedTable = table;
+        if (schemaMap.containsKey(schema)) {
+            mappedSchema = schemaMap.get(schema);
+        }
+        JSONArray tableMaps = obj.getJSONArray("tableMap");
+        for (Object obj: tableMaps) {
+            JSONObject tableMap = (JSONObject) obj;
+            if (schema.equals(tableMap.getString("srcSchema")) &&
+                    table.equals(tableMap.getString("srcTable"))) {
+                mappedSchema = tableMap.getString("tgtSchema");
+                mappedTable = tableMap.getString("tgtTable");
+            }
+        }
+        return new Pair<>(mappedSchema, mappedTable);
+    }
+
     public static void main(String[] args) throws IOException, SQLException {
         String path = "target/classes/lambdasinaction/tmp/schemaMap_policy.json";
         Parser parser = new Parser(path);
 
-        List<String> jsonSchemas = parser.getSchemas();
-        List<String> jsonTables = parser.getTables();
         System.out.println("entireDbSync - " + parser.isEntire());
+        List<String> jsonSchemas = parser.getSchemas();
+        // List<String> jsonTables = parser.getTables();
         System.out.println("jsonSchemas - " + jsonSchemas);
-        System.out.println("jsonTables - " + jsonTables);
+        // System.out.println("jsonTables - " + jsonTables);
 
         MyJDBC db = new MyJDBC("localhost", "", "manga", "manga");
         List<String> dbSchemas = db.schemaList();
@@ -63,22 +94,25 @@ public class Parser {
         for (String schema: dbSchemas) {
             if (! exclusive.contains(schema)) {
                 List<String> dbTables = db.tabList(schema);
-                for (String tab : dbTables) {
-                    schemaSet.add(schema);
-                    String table = schema + "." + tab;
+                List<String> jsonTables = parser.getTables(schema);
+                for (String table : dbTables) {
                     if (parser.isEntire() || jsonSchemas.contains(schema) || jsonTables.contains(table)) {
-                        tables.add(schema + "." + tab);
+                        schemaSet.add(schema);
+                        tables.add(schema + "." + table);
                     }
                 }
             }
         }
+
         List<String> schemas = new ArrayList<>(schemaSet);
         System.out.println("schemas - " + schemas);
         System.out.println("tables - " + tables);
         List<String> unknownSchema = jsonSchemas.stream().filter(s -> ! schemas.contains(s)).collect(Collectors.toList());
+        List<String> jsonTables = parser.getTables();
         List<String> unknownTables = jsonTables.stream().filter(s -> ! tables.contains(s)).collect(Collectors.toList());
         System.out.println("unknownSchema - " + unknownSchema);
         System.out.println("unknownTables - " + unknownTables);
+        System.out.print(parser.getMapped("foo", "bar"));
 
         db.close();
     }
