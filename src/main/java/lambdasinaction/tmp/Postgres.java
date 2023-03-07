@@ -1,5 +1,7 @@
 package lambdasinaction.tmp;
 
+import org.postgresql.util.PSQLException;
+
 import java.sql.*;
 import java.util.*;
 
@@ -200,6 +202,35 @@ public class Postgres {
         return sb.toString();
     }
 
+    public List<String> getFunctions(String schema) throws SQLException {
+        List<String> result = new ArrayList<>();
+        String sql = String.format(
+                "SELECT routine_name " +
+                        "FROM information_schema.routines " +
+                        "WHERE routine_type = 'FUNCTION' AND routine_schema = '%s'", schema);
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            result.add(rs.getString("routine_name"));
+        }
+        return result;
+    }
+
+    public List<String> getFunctionDDLs(String schema, String name) throws SQLException {
+        List<String> result = new ArrayList<>();
+        String sql = String.format(
+                "SELECT pg_get_functiondef(p.oid) " +
+                        "FROM pg_proc p " +
+                        "JOIN pg_namespace n ON n.oid = p.pronamespace " +
+                        "WHERE n.nspname = '%s' AND  p.proname = '%s'", schema, name);
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            result.add(rs.getString("pg_get_functiondef"));
+        }
+        return result;
+    }
+
     public Tree partitionTree(String schema, String partitionTable) throws SQLException {
         Statement stat = conn.createStatement();
         String sql = String.format(
@@ -229,31 +260,92 @@ public class Postgres {
         return tree;
     }
 
-    public List<Map<String, Object>> partitionMap(String schema, String partitionTable) throws SQLException {
-        Statement stat = conn.createStatement();
+    public List<Map<String, Object>> partitionMap(String schema, String name) throws SQLException {
         String sql = String.format(
                 "select relid, parentrelid, isleaf, level, " +
                         "pg_get_partkeydef(relid) as keydef, " +
                         "pg_get_expr(relpartbound, oid) as bound " +
                         "from pg_partition_tree('%s.%s') " +
-                        "left join pg_class on pg_class.oid = relid", schema, partitionTable);
-        ResultSet rs = stat.executeQuery(sql);
-        if (! rs.isBeforeFirst()) {
-            System.out.println("No partition");
-            return null;
-        }
+                        "left join pg_class on pg_class.oid = relid", schema, name);
         List<Map<String, Object>> list = new ArrayList<>();
-        while (rs.next()) {
-            Map<String, Object> map = new HashMap<>();
-            map.put("name", rs.getString("relid"));
-            map.put("parent", rs.getString("parentrelid"));
-            map.put("isLeaf", rs.getBoolean("isleaf"));
-            map.put("level", rs.getInt("level"));
-            map.put("keyDef", rs.getString("keydef"));
-            map.put("bound", rs.getString("bound"));
-            list.add(map);
+        try {
+            Statement stat = conn.createStatement();
+            ResultSet rs = stat.executeQuery(sql);
+            if (!rs.isBeforeFirst()) {
+                System.out.println("No partition");
+                return null;
+            }
+            while (rs.next()) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("name", rs.getString("relid"));
+                map.put("parent", rs.getString("parentrelid"));
+                map.put("isLeaf", rs.getBoolean("isleaf"));
+                map.put("level", rs.getInt("level"));
+                map.put("keyDef", rs.getString("keydef"));
+                map.put("bound", rs.getString("bound"));
+                list.add(map);
+            }
+        } catch (PSQLException e) {
+            System.out.println(e.toString());
         }
         return list;
+    }
+
+    public List<Map<String, Object>> partitionMap2(String schema, String name) throws SQLException {
+        String sql = String.format(
+                "SELECT oid, 0 AS lvl, pg_get_partkeydef(oid) " +
+                        "FROM pg_class " +
+                        "WHERE relname = '%s' AND " +
+                        "relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = '%s')",
+                name, schema);
+        List<Map<String, Object>> result = new ArrayList<>();
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        int oid = 0;
+        while (rs.next()) {
+            oid = rs.getInt("oid");
+            Map<String, Object> map = new HashMap<>();
+            map.put("name", schema + '.' + name);
+            map.put("parent", null);
+            map.put("isLeaf", false);
+            map.put("level", rs.getInt("lvl"));
+            map.put("keyDef", rs.getString("pg_get_partkeydef"));
+            map.put("bound", null);
+            result.add(map);
+        }
+
+        sql = String.format(
+                "WITH RECURSIVE Tree(inhrelid, inhparent, lvl) " +
+                        "AS ( " +
+                        "SELECT inhrelid, inhparent, 1 AS lvl, c.relname, c2.relname AS name2, " +
+                        "pg_get_partkeydef(inhrelid), pg_get_expr(c.relpartbound, inhrelid) " +
+                        "FROM pg_inherits " +
+                        "JOIN pg_class c ON c.oid = inhrelid " +
+                        "JOIN pg_class c2 ON c2.oid = inhparent " +
+                        "WHERE inhparent = %d " +
+                        "UNION ALL " +
+                        "SELECT i.inhrelid, i.inhparent, t.lvl + 1, c.relname, c2.relname AS name2, " +
+                        "pg_get_partkeydef(i.inhrelid), pg_get_expr(c.relpartbound, i.inhrelid) " +
+                        "FROM pg_inherits i " +
+                        "JOIN Tree t on i.inhparent = t.inhrelid " +
+                        "JOIN pg_class c ON c.oid = i.inhrelid " +
+                        "JOIN pg_class c2 ON c2.oid = i.inhparent " +
+                        ")" +
+                        "SELECT * FROM Tree ORDER BY lvl, inhrelid", oid);
+        rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("name", schema + '.' + rs.getString("relname"));
+            map.put("parent", schema + '.' + rs.getString("name2"));
+            String keyDef = rs.getString("pg_get_partkeydef");
+            map.put("isLeaf", keyDef == null);
+            map.put("level", rs.getInt("lvl"));
+            map.put("keyDef", keyDef);
+            map.put("bound", rs.getString("pg_get_expr"));
+            result.add(map);
+        }
+
+        return result;
     }
 
     public Tree partitionTree2(List<Map<String, Object>> list) {
@@ -275,20 +367,24 @@ public class Postgres {
         try {
             // pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
             pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
-//            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
-//            System.out.println(pg.tabList2("manga", null, types));
-//            System.out.println(pg.inhTables("manga", "customers"));
-//            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
+            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
+            System.out.println(pg.tabList2("manga", null, types));
+            System.out.println(pg.inhTables("manga", "customers"));
+            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
+            System.out.println(map);
+            System.out.println(pg.partitionMap2("manga", "customers"));
 //            System.out.println(pg.partitionTree2(map));
 //            System.out.println(pg.getTableColumns("manga", "students"));
-            System.out.println(pg.getUdts("manga"));
-            List<ColumnMeta> columns = pg.getUdtColumns("manga", "communication");
-            System.out.println(columns);
-            System.out.println(pg.createUdtSql("manga", "communication", columns));
-            System.out.println(pg.getEnums("manga"));
-            List<String> labels = pg.getEnumLabels("manga", "bug_status");
-            System.out.println(labels);
-            System.out.println(pg.createEnumSql("manga", "bug_status", labels));
+//            System.out.println(pg.getUdts("manga"));
+//            List<ColumnMeta> columns = pg.getUdtColumns("manga", "communication");
+//            System.out.println(columns);
+//            System.out.println(pg.createUdtSql("manga", "communication", columns));
+//            System.out.println(pg.getEnums("manga"));
+//            List<String> labels = pg.getEnumLabels("manga", "bug_status");
+//            System.out.println(labels);
+//            System.out.println(pg.createEnumSql("manga", "bug_status", labels));
+//            System.out.println(pg.getFunctions("manga"));
+//            System.out.println(pg.getFunctionDDLs("manga", "counts"));
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
