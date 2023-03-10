@@ -231,6 +231,42 @@ public class Postgres {
         return result;
     }
 
+    public List<String> getTriggers(String schema) throws SQLException {
+        List<String> result = new ArrayList<>();
+        String sql = String.format(
+                "SELECT tgname " +
+                "FROM pg_trigger " +
+                "WHERE tgrelid IN ( " +
+                        "SELECT oid " +
+                        "FROM pg_class " +
+                        "WHERE relnamespace = ( " +
+                                "SELECT oid " +
+                                "FROM pg_namespace " +
+                                "WHERE nspname='%s'))", schema);
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            result.add(rs.getString("tgname"));
+        }
+        return result;
+    }
+
+    public List<String> getTriggerDDLs(String schema, String name) throws SQLException {
+        List<String> result = new ArrayList<>();
+        String sql = String.format(
+                "SELECT pg_get_triggerdef(t.oid) " +
+                        "FROM pg_trigger t " +
+                        "JOIN pg_class c ON t.tgrelid = c.relfilenode " +
+                        "JOIN pg_namespace n ON c.relnamespace = n.oid " +
+                        "WHERE n.nspname = '%s' AND t.tgname = '%s'", schema, name);
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            result.add(rs.getString("pg_get_triggerdef"));
+        }
+        return result;
+    }
+
     public Tree partitionTree(String schema, String partitionTable) throws SQLException {
         Statement stat = conn.createStatement();
         String sql = String.format(
@@ -303,13 +339,17 @@ public class Postgres {
         ResultSet rs = stat.executeQuery(sql);
         int oid = 0;
         while (rs.next()) {
+            String keyDef = rs.getString("pg_get_partkeydef");
+            if (keyDef == null) {
+                return null;		// no keyDef, not partition table
+            }
             oid = rs.getInt("oid");
             Map<String, Object> map = new HashMap<>();
             map.put("name", schema + '.' + name);
             map.put("parent", null);
             map.put("isLeaf", false);
             map.put("level", rs.getInt("lvl"));
-            map.put("keyDef", rs.getString("pg_get_partkeydef"));
+            map.put("keyDef", keyDef);
             map.put("bound", null);
             result.add(map);
         }
@@ -334,10 +374,10 @@ public class Postgres {
                         "SELECT * FROM Tree ORDER BY lvl, inhrelid", oid);
         rs = stat.executeQuery(sql);
         while (rs.next()) {
+            String keyDef = rs.getString("pg_get_partkeydef");
             Map<String, Object> map = new HashMap<>();
             map.put("name", schema + '.' + rs.getString("relname"));
             map.put("parent", schema + '.' + rs.getString("name2"));
-            String keyDef = rs.getString("pg_get_partkeydef");
             map.put("isLeaf", keyDef == null);
             map.put("level", rs.getInt("lvl"));
             map.put("keyDef", keyDef);
@@ -365,14 +405,16 @@ public class Postgres {
     public static void main(String... argv) {
         Postgres pg;
         try {
-            // pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
-            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
+//            pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
+//            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
+            pg = new Postgres("192.168.55.12", 5432, "manga", "manga", "manga");
             String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
             System.out.println(pg.tabList2("manga", null, types));
-            System.out.println(pg.inhTables("manga", "customers"));
-            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
-            System.out.println(map);
-            System.out.println(pg.partitionMap2("manga", "customers"));
+//            System.out.println(pg.inhTables("manga", "customers"));
+//            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
+//            System.out.println(map);
+//            System.out.println(pg.partitionMap2("manga", "customers"));
+//            System.out.println(pg.partitionMap2("manga", "fruit"));
 //            System.out.println(pg.partitionTree2(map));
 //            System.out.println(pg.getTableColumns("manga", "students"));
 //            System.out.println(pg.getUdts("manga"));
@@ -385,6 +427,8 @@ public class Postgres {
 //            System.out.println(pg.createEnumSql("manga", "bug_status", labels));
 //            System.out.println(pg.getFunctions("manga"));
 //            System.out.println(pg.getFunctionDDLs("manga", "counts"));
+            System.out.println(pg.getTriggers("manga"));
+            System.out.println(pg.getTriggerDDLs("manga", "check_update"));
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
