@@ -202,6 +202,35 @@ public class Postgres {
         return sb.toString();
     }
 
+    public List<String> getProcedures(String schema) throws SQLException {
+        List<String> result = new ArrayList<>();
+        String sql = String.format(
+                "SELECT routine_name " +
+                        "FROM information_schema.routines " +
+                        "WHERE routine_type = 'PROCEDURE' AND routine_schema = '%s'", schema);
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            result.add(rs.getString("routine_name"));
+        }
+        return result;
+    }
+
+    public List<String> getProcedureDDLs(String schema, String name) throws SQLException {
+        List<String> result = new ArrayList<>();
+        String sql = String.format(
+                "SELECT pg_get_functiondef(p.oid) " +
+                        "FROM pg_proc p " +
+                        "JOIN pg_namespace n ON n.oid = p.pronamespace " +
+                        "WHERE n.nspname = '%s' AND  p.proname = '%s'", schema, name);
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            result.add(rs.getString("pg_get_functiondef"));
+        }
+        return result;
+    }
+
     public List<String> getFunctions(String schema) throws SQLException {
         List<String> result = new ArrayList<>();
         String sql = String.format(
@@ -426,10 +455,10 @@ public class Postgres {
         Postgres pg;
         try {
 //            pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
-//            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
-            pg = new Postgres("192.168.55.12", 5432, "manga", "manga", "manga");
-            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
-            System.out.println(pg.tabList2("manga", null, types));
+            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
+//            pg = new Postgres("192.168.55.12", 5432, "manga", "manga", "manga");
+//            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
+//            System.out.println(pg.tabList2("manga", null, types));
 //            System.out.println(pg.inhTables("manga", "customers"));
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(map);
@@ -449,7 +478,9 @@ public class Postgres {
 //            System.out.println(pg.getFunctionDDLs("manga", "counts"));
 //            System.out.println(pg.getTriggers("manga"));
 //            System.out.println(pg.getTriggerDDLs("manga", "check_update"));
-            System.out.println(pg.getTableSpace("manga", "customers"));
+//            System.out.println(pg.getTableSpace("manga", "customers"));
+            System.out.println(pg.getProcedures("manga"));
+            System.out.println(pg.getProcedureDDLs("manga", "discount"));
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
