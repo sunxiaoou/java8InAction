@@ -172,11 +172,6 @@ public class Postgres {
 
     public List<String> getEnumLabels(String schema, String name) throws SQLException {
         Statement stat = conn.createStatement();
-//        String sql = String.format(
-//                "select e.enumlabel " +
-//                        "from pg_type t " +
-//                        "join pg_enum e on t.oid = e.enumtypid " +
-//                        "where t.typname = '%s'", name);
         String sql = String.format(
                 "SELECT e.enumlabel FROM pg_catalog.pg_type t " +
                         "JOIN pg_catalog.pg_enum e ON t.oid = e.enumtypid " +
@@ -217,18 +212,7 @@ public class Postgres {
     }
 
     public List<String> getProcedureDDLs(String schema, String name) throws SQLException {
-        List<String> result = new ArrayList<>();
-        String sql = String.format(
-                "SELECT pg_get_functiondef(p.oid) " +
-                        "FROM pg_proc p " +
-                        "JOIN pg_namespace n ON n.oid = p.pronamespace " +
-                        "WHERE n.nspname = '%s' AND  p.proname = '%s'", schema, name);
-        Statement stat = conn.createStatement();
-        ResultSet rs = stat.executeQuery(sql);
-        while (rs.next()) {
-            result.add(rs.getString("pg_get_functiondef"));
-        }
-        return result;
+        return getFunctionDDLs(schema, name);
     }
 
     public List<String> getFunctions(String schema) throws SQLException {
