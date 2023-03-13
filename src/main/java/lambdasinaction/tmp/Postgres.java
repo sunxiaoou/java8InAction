@@ -402,6 +402,26 @@ public class Postgres {
         return tree;
     }
 
+    public String getTableSpace(String schema, String name) throws SQLException {
+        List<String> result = new ArrayList<>();
+        String sql = String.format(
+                "SELECT t.spcname " +
+                        "FROM pg_tablespace t " +
+                        "JOIN pg_class c ON c.reltablespace = t.oid " +
+                        "JOIN pg_namespace n ON n.oid = c.relnamespace " +
+                        "WHERE n.nspname = '%s' AND c.relname = '%s'", schema, name);
+        Statement stat = conn.createStatement();
+        ResultSet rs = stat.executeQuery(sql);
+        if (! rs.isBeforeFirst()) {
+            System.out.println("No table space");
+            return null;
+        }
+        while (rs.next()) {
+            result.add(rs.getString("spcname"));
+        }
+        return result.get(0);
+    }
+
     public static void main(String... argv) {
         Postgres pg;
         try {
@@ -427,8 +447,9 @@ public class Postgres {
 //            System.out.println(pg.createEnumSql("manga", "bug_status", labels));
 //            System.out.println(pg.getFunctions("manga"));
 //            System.out.println(pg.getFunctionDDLs("manga", "counts"));
-            System.out.println(pg.getTriggers("manga"));
-            System.out.println(pg.getTriggerDDLs("manga", "check_update"));
+//            System.out.println(pg.getTriggers("manga"));
+//            System.out.println(pg.getTriggerDDLs("manga", "check_update"));
+            System.out.println(pg.getTableSpace("manga", "customers"));
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
