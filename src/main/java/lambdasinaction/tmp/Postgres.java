@@ -17,6 +17,13 @@ public class Postgres {
         conn.close();
     }
 
+    private String replacePrefix(String sql, String prefix) {
+        if (! prefix.equals("pg")) {
+            return sql.replaceAll("pg_(\\w+)", prefix + '_' + "$1");
+        }
+        return sql;
+    }
+
     public List<String> tabList(String schema) throws SQLException {
         String sql = String.format("select * from information_schema.tables where table_schema = '%s';", schema);
         Statement st = conn.createStatement();
@@ -371,30 +378,32 @@ public class Postgres {
                 "WITH RECURSIVE Tree(inhrelid, inhparent, lvl) " +
                         "AS ( " +
                         "SELECT inhrelid, inhparent, 1 AS lvl, c.relname, c2.relname AS name2, " +
-                        "pg_get_partkeydef(inhrelid), pg_get_expr(c.relpartbound, inhrelid) " +
+                        "pg_get_partkeydef(inhrelid) AS keydef, pg_get_expr(c.relpartbound, inhrelid) AS expr " +
                         "FROM pg_inherits " +
                         "JOIN pg_class c ON c.oid = inhrelid " +
                         "JOIN pg_class c2 ON c2.oid = inhparent " +
                         "WHERE inhparent = %d " +
                         "UNION ALL " +
                         "SELECT i.inhrelid, i.inhparent, t.lvl + 1, c.relname, c2.relname AS name2, " +
-                        "pg_get_partkeydef(i.inhrelid), pg_get_expr(c.relpartbound, i.inhrelid) " +
+                        "pg_get_partkeydef(i.inhrelid) AS keydef, pg_get_expr(c.relpartbound, i.inhrelid) AS expr " +
                         "FROM pg_inherits i " +
                         "JOIN Tree t on i.inhparent = t.inhrelid " +
                         "JOIN pg_class c ON c.oid = i.inhrelid " +
                         "JOIN pg_class c2 ON c2.oid = i.inhparent " +
                         ")" +
                         "SELECT * FROM Tree ORDER BY lvl, inhrelid", oid);
+        System.out.println(replacePrefix(sql, "UX"));
+        System.out.println(replacePrefix(sql, "pg"));
         rs = stat.executeQuery(sql);
         while (rs.next()) {
-            String keyDef = rs.getString("pg_get_partkeydef");
+            String keyDef = rs.getString("keydef");
             Map<String, Object> map = new HashMap<>();
             map.put("name", schema + '.' + rs.getString("relname"));
             map.put("parent", schema + '.' + rs.getString("name2"));
             map.put("isLeaf", keyDef == null);
             map.put("level", rs.getInt("lvl"));
             map.put("keyDef", keyDef);
-            map.put("bound", rs.getString("pg_get_expr"));
+            map.put("bound", rs.getString("expr"));
             result.add(map);
         }
 
@@ -446,7 +455,7 @@ public class Postgres {
 //            System.out.println(pg.inhTables("manga", "customers"));
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(map);
-//            System.out.println(pg.partitionMap2("manga", "customers"));
+            System.out.println(pg.partitionMap2("manga", "customers"));
 //            System.out.println(pg.partitionMap2("manga", "fruit"));
 //            System.out.println(pg.partitionTree2(map));
 //            System.out.println(pg.getTableColumns("manga", "students"));
@@ -463,8 +472,8 @@ public class Postgres {
 //            System.out.println(pg.getTriggers("manga"));
 //            System.out.println(pg.getTriggerDDLs("manga", "check_update"));
 //            System.out.println(pg.getTableSpace("manga", "customers"));
-            System.out.println(pg.getProcedures("manga"));
-            System.out.println(pg.getProcedureDDLs("manga", "discount"));
+//            System.out.println(pg.getProcedures("manga"));
+//            System.out.println(pg.getProcedureDDLs("manga", "discount"));
             pg.close();
         } catch (SQLException e) {
             e.printStackTrace();
