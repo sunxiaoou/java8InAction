@@ -175,29 +175,28 @@ public class Postgres {
     }
 
     public List<ColumnMeta> getUdtColumns(String schema, String name) throws SQLException {
-        Statement stat = conn.createStatement();
         String sql = String.format(
-                "select attname, atttypid, attlen, attnotnull,atthasdef, attmissingval, typname " +
-                        "from pg_attribute " +
-                        "left join pg_type on atttypid = pg_type.oid " +
-                        "where attrelid='%s.%s'::REGCLASS",
-                        schema, name);
-        ResultSet rs = stat.executeQuery(sql);
+                "SELECT a.attname, a.atttypid, a.attlen, a.attnotnull, a.atthasdef, t.typname " +
+                        "FROM pg_attribute a " +
+                        "LEFT JOIN pg_type t ON a.atttypid = t.oid " +
+                        "WHERE a.attrelid='%s.%s'::REGCLASS " +
+                        "ORDER BY a.attnum",
+                schema, name);
         List<ColumnMeta> columns = new ArrayList<>();
-        while (rs.next()) {
-            ColumnMeta column = new ColumnMeta(rs.getString("attname"));
-            column.setType(rs.getInt("atttypid"));
-            column.setTypeName(rs.getString("typname"));
-            column.setLength(Long.valueOf(rs.getObject("attlen").toString()));
-            column.setPrecision(Long.valueOf(rs.getObject("attlen").toString()));
-            column.setScale(0);
-            column.setNullable(rs.getBoolean("attnotnull") ? 0 : 1);
-            column.setRemarks(null);
-            ArrayList<Object> array = (ArrayList<Object>) rs.getArray("attmissingval");
-            if (array != null) {
-                column.setDefaultValues(rs.getArray("attmissingval").toString());
+        try(Statement statement = conn.createStatement()) {
+            try (ResultSet rs = statement.executeQuery(sql)) {
+                while (rs.next()) {
+                    ColumnMeta column = new ColumnMeta(rs.getString("attname"));
+                    column.setType(rs.getInt("atttypid"));
+                    column.setTypeName(rs.getString("typname"));
+                    column.setLength(Long.valueOf(rs.getObject("attlen").toString()));
+                    column.setPrecision(Long.valueOf(rs.getObject("attlen").toString()));
+                    column.setScale(0);
+                    column.setNullable(rs.getBoolean("attnotnull") ? 0 : 1);
+                    column.setRemarks(null);
+                    columns.add(column);
+                }
             }
-            columns.add(column);
         }
         return columns;
     }
@@ -504,14 +503,14 @@ public class Postgres {
         Postgres pg;
         try {
 //            pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
-            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
-//            pg = new Postgres("192.168.55.12", 5432, "manga", "manga", "manga");
+//            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
+            pg = new Postgres("192.168.55.12", 5432, "manga", "manga", "manga");
             String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
             System.out.println(pg.tabList2("manga", null, types));
-            System.out.println(pg.checkPartition("manga", "fruit2"));
-            System.out.println(pg.inhTables("manga", "customers"));
-            System.out.println(pg.inhTables("manga"));
-            System.out.println(pg.nonInhTabs("manga"));
+//            System.out.println(pg.checkPartition("manga", "fruit2"));
+//            System.out.println(pg.inhTables("manga", "customers"));
+//            System.out.println(pg.inhTables("manga"));
+//            System.out.println(pg.nonInhTabs("manga"));
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(map);
 //            System.out.println(pg.partitionMap2("manga", "customers"));
@@ -519,8 +518,8 @@ public class Postgres {
 //            System.out.println(pg.partitionTree2(map));
 //            System.out.println(pg.getTableColumns("manga", "students"));
 //            System.out.println(pg.getUdts("manga"));
-//            List<ColumnMeta> columns = pg.getUdtColumns("manga", "communication");
-//            System.out.println(columns);
+            List<ColumnMeta> columns = pg.getUdtColumns("manga", "complex");
+            System.out.println(columns);
 //            System.out.println(pg.createUdtSql("manga", "communication", columns));
 //            System.out.println(pg.getEnums("manga"));
 //            List<String> labels = pg.getEnumLabels("manga", "bug_status");
