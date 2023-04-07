@@ -64,6 +64,26 @@ public class Postgres {
         return tables;
     }
 
+    public List<Boolean> checkPartition(String schema, String table) throws SQLException {
+        Statement stat = conn.createStatement();
+        String sql = String.format(
+                "SELECT c.relname, c.relispartition " +
+                        "FROM pg_inherits i " +
+                        "JOIN pg_class c ON i.inhrelid = c.oid " +
+                        "JOIN pg_class c2 ON i.inhparent = c2.oid " +
+                        "WHERE c.relnamespace = '%s'::regnamespace " +
+                        "AND c2.relname = '%s'",
+                schema, table);
+        List<Boolean> tables = new ArrayList<>();
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+//            tables.add(rs.getString("relname"));
+            tables.add(rs.getBoolean("relispartition"));
+        }
+
+        return tables;
+    }
+
     public List<String> inhTables(String schema, String partitionTable) throws SQLException {
         Statement stat = conn.createStatement();
         String sql = String.format("select relid from pg_partition_tree('%s.%s') where isleaf = true",
@@ -72,6 +92,42 @@ public class Postgres {
         ResultSet rs = stat.executeQuery(sql);
         while (rs.next()) {
             tables.add(rs.getString("relid"));
+        }
+        return tables;
+    }
+
+    public List<String> inhTables(String schema) throws SQLException {
+        List<String> tables = new ArrayList<>();
+        Statement stat = conn.createStatement();
+        String sql = String.format(
+                "SELECT c.relname " +
+                        "FROM pg_inherits i " +
+                        "JOIN pg_class c ON c.oid = i.inhrelid " +
+                        "JOIN pg_class c2 ON c2.oid = i.inhparent " +
+                        "WHERE c2.relnamespace = '%s'::regnamespace", schema);
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            tables.add(rs.getString("relname"));
+        }
+        return tables;
+    }
+
+    public List<String> nonInhTabs(String schema) throws SQLException {
+        List<String> tables = new ArrayList<>();
+        Statement stat = conn.createStatement();
+        String sql = String.format(
+                "SELECT c.relname " +
+                        "FROM pg_class c " +
+                        "WHERE NOT EXISTS (" +
+                        "SELECT 1 " +
+                        "FROM pg_inherits i " +
+                        "WHERE i.inhrelid = c.oid" +
+                        ") " +
+                        "AND c.relnamespace = '%s'::regnamespace " +
+                        "AND c.relkind IN ('r', 'p')", schema);
+        ResultSet rs = stat.executeQuery(sql);
+        while (rs.next()) {
+            tables.add(rs.getString("relname"));
         }
         return tables;
     }
@@ -450,12 +506,15 @@ public class Postgres {
 //            pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
             pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
 //            pg = new Postgres("192.168.55.12", 5432, "manga", "manga", "manga");
-//            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
-//            System.out.println(pg.tabList2("manga", null, types));
-//            System.out.println(pg.inhTables("manga", "customers"));
+            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
+            System.out.println(pg.tabList2("manga", null, types));
+            System.out.println(pg.checkPartition("manga", "fruit2"));
+            System.out.println(pg.inhTables("manga", "customers"));
+            System.out.println(pg.inhTables("manga"));
+            System.out.println(pg.nonInhTabs("manga"));
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(map);
-            System.out.println(pg.partitionMap2("manga", "customers"));
+//            System.out.println(pg.partitionMap2("manga", "customers"));
 //            System.out.println(pg.partitionMap2("manga", "fruit"));
 //            System.out.println(pg.partitionTree2(map));
 //            System.out.println(pg.getTableColumns("manga", "students"));
