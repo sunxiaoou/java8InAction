@@ -403,6 +403,25 @@ public class Postgres {
         return list;
     }
 
+    public Map<String, String> constraints(String schema, String table) throws SQLException {
+        String sql = String.format(
+                "SELECT s.conname, s.contype, s.conrelid, pg_get_constraintdef(s.oid) condef " +
+                        "FROM pg_constraint s " +
+                        "JOIN pg_class c on s.conrelid = c.oid " +
+                        "JOIN pg_namespace n on s.connamespace = n.oid " +
+                        "WHERE s.conislocal is true AND n.nspname = '%s' AND c.relname = '%s'",
+                schema, table);
+        Map<String, String> result = new HashMap<>();
+        try(Statement statement = conn.createStatement()) {
+            try (ResultSet rs = statement.executeQuery(sql)) {
+                while (rs.next()) {
+                    result.put(rs.getString("conname"), rs.getString("condef"));
+                }
+            }
+        }
+        return result;
+    }
+
     public List<Map<String, Object>> partitionMap2(String schema, String name) throws SQLException {
         String sql = String.format(
                 "SELECT oid, 0 AS lvl, pg_get_partkeydef(oid) " +
@@ -427,6 +446,7 @@ public class Postgres {
             map.put("level", rs.getInt("lvl"));
             map.put("keyDef", keyDef);
             map.put("bound", null);
+            map.put("constraints", constraints(schema, name));
             result.add(map);
         }
 
@@ -448,22 +468,75 @@ public class Postgres {
                         "JOIN pg_class c2 ON c2.oid = i.inhparent " +
                         ")" +
                         "SELECT * FROM Tree ORDER BY lvl, inhrelid", oid);
-        System.out.println(replacePrefix(sql, "UX"));
-        System.out.println(replacePrefix(sql, "pg"));
+//        System.out.println(replacePrefix(sql, "UX"));
+//        System.out.println(replacePrefix(sql, "pg"));
         rs = stat.executeQuery(sql);
         while (rs.next()) {
             String keyDef = rs.getString("keydef");
             Map<String, Object> map = new HashMap<>();
-            map.put("name", schema + '.' + rs.getString("relname"));
+            String child = rs.getString("relname");
+            map.put("name", schema + '.' + child);
             map.put("parent", schema + '.' + rs.getString("name2"));
             map.put("isLeaf", keyDef == null);
             map.put("level", rs.getInt("lvl"));
             map.put("keyDef", keyDef);
             map.put("bound", rs.getString("expr"));
+            map.put("constraints", constraints(schema, child));
             result.add(map);
         }
 
         return result;
+    }
+
+    public List<String> createPartitionSqls(List<Map<String, Object>> partitions) throws SQLException {
+        List<String> sqls = new ArrayList<>();
+        for (Map<String, Object> partition: partitions) {
+            String name = (String) partition.get("name");
+            String parent = (String) partition.get("parent");
+            boolean isLeaf = (boolean) partition.get("isLeaf");
+            int level = (int) partition.get("level");
+            String keyDef = (String) partition.get("keyDef");
+            String bound = (String) partition.get("bound");
+            Map<String, String> constraints = (Map) partition.get("constraints");
+            StringBuilder sb = new StringBuilder();
+            if (level == 0) {
+                List<String> strs = Arrays.asList(name.split("\\."));
+                List<ColumnMeta> columns = getTableColumns(strs.get(0), strs.get(1));
+                sb.append("CREATE TABLE ").append(name).append(" (");
+                for (ColumnMeta column: columns) {
+                    sb.append(column.getName()).append(' ').append(column.getTypeName());
+                    if (column.getNullable() != 1) {
+                        sb.append(" NOT NULL");
+                    }
+                    sb.append(", ");
+                }
+                for (Map.Entry<String, String> entry: constraints.entrySet()) {
+                    sb.append("CONSTRAINT ").append(entry.getKey()).append(' ').append(entry.getValue())
+                            .append(", ");
+                }
+                sb.delete(sb.length() - 2, sb.length());
+                sb.append(") PARTITION BY ").append(keyDef);
+            } else if (! isLeaf) {
+                sb.append("CREATE TABLE ").append(name).append(" PARTITION OF ").append(parent).append(' ')
+                        .append(bound).append(" PARTITION BY ").append(keyDef);
+            } else {
+                sb.append("CREATE TABLE ").append(name).append(" PARTITION OF ").append(parent).append(' ');
+                if (! constraints.isEmpty()) {
+                    sb.append('(');
+                    for (Map.Entry<String, String> entry: constraints.entrySet()) {
+                        sb.append("CONSTRAINT ").append(entry.getKey()).append(' ').append(entry.getValue())
+                                .append(", ");
+                    }
+                    sb.delete(sb.length() - 2, sb.length());
+                    sb.append(") ");
+
+                }
+                // in case PG10 create taZble sql doesn't recognize bitmap like B'0001', change to '0001'
+                sb.append(bound.replaceAll("B('[01]+')", "$1"));
+            }
+            sqls.add(sb.toString());
+        }
+        return sqls;
     }
 
     public Tree partitionTree2(List<Map<String, Object>> list) {
@@ -515,13 +588,16 @@ public class Postgres {
             System.out.println(pg.nonInheritedTabs("manga"));
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(map);
-//            System.out.println(pg.partitionMap2("manga", "customers"));
+            System.out.println(pg.constraints("manga", "c_a_small"));
+            List<Map<String, Object>> partitions = pg.partitionMap2("manga", "customers");
+            System.out.println(partitions);
+            System.out.println(pg.createPartitionSqls(partitions));
 //            System.out.println(pg.partitionMap2("manga", "fruit"));
 //            System.out.println(pg.partitionTree2(map));
-//            System.out.println(pg.getTableColumns("manga", "students"));
+//            System.out.println(pg.getTableColumns("manga", "customers"));
 //            System.out.println(pg.getUdts("manga"));
-            List<ColumnMeta> columns = pg.getUdtColumns("manga", "complex");
-            System.out.println(columns);
+//            List<ColumnMeta> columns = pg.getUdtColumns("manga", "complex");
+//            System.out.println(columns);
 //            System.out.println(pg.createUdtSql("manga", "communication", columns));
 //            System.out.println(pg.getEnums("manga"));
 //            List<String> labels = pg.getEnumLabels("manga", "bug_status");
