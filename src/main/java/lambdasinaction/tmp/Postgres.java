@@ -64,6 +64,27 @@ public class Postgres {
         return tables;
     }
 
+    public List<String> nonInheritedTabs(String schema) throws SQLException {
+        String sql = String.format(
+                "SELECT c.relname " +
+                        "FROM pg_class c " +
+                        "WHERE NOT EXISTS ( " +
+                                "SELECT 1 FROM pg_inherits i WHERE i.inhrelid = c.oid " +
+                        ") " +
+                        "AND c.relnamespace = '%s'::regnamespace " +
+                        "AND c.relkind IN ('r', 'p')",
+                schema);
+        List<String> tables = new ArrayList<>();
+        try(Statement statement = conn.createStatement()) {
+            try (ResultSet rs = statement.executeQuery(sql)) {
+                while (rs.next()) {
+                    tables.add(rs.getString("relname"));
+                }
+            }
+        }
+        return tables;
+    }
+
     public List<Boolean> checkPartition(String schema, String table) throws SQLException {
         Statement stat = conn.createStatement();
         String sql = String.format(
@@ -105,26 +126,6 @@ public class Postgres {
                         "JOIN pg_class c ON c.oid = i.inhrelid " +
                         "JOIN pg_class c2 ON c2.oid = i.inhparent " +
                         "WHERE c2.relnamespace = '%s'::regnamespace", schema);
-        ResultSet rs = stat.executeQuery(sql);
-        while (rs.next()) {
-            tables.add(rs.getString("relname"));
-        }
-        return tables;
-    }
-
-    public List<String> nonInhTabs(String schema) throws SQLException {
-        List<String> tables = new ArrayList<>();
-        Statement stat = conn.createStatement();
-        String sql = String.format(
-                "SELECT c.relname " +
-                        "FROM pg_class c " +
-                        "WHERE NOT EXISTS (" +
-                        "SELECT 1 " +
-                        "FROM pg_inherits i " +
-                        "WHERE i.inhrelid = c.oid" +
-                        ") " +
-                        "AND c.relnamespace = '%s'::regnamespace " +
-                        "AND c.relkind IN ('r', 'p')", schema);
         ResultSet rs = stat.executeQuery(sql);
         while (rs.next()) {
             tables.add(rs.getString("relname"));
@@ -505,12 +506,13 @@ public class Postgres {
 //            pg = new Postgres("localhost", 5432, "hue_d", "hue_u", "huepassword");
 //            pg = new Postgres("192.168.55.250", 5432, "hue_d", "hue_u", "huepassword");
             pg = new Postgres("192.168.55.12", 5432, "manga", "manga", "manga");
-            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
+//            String[] types = new String[]{"TABLE", "PARTITIONED TABLE", "TYPE"};
+            String[] types = new String[]{"TABLE", "PARTITIONED TABLE"};
             System.out.println(pg.tabList2("manga", null, types));
 //            System.out.println(pg.checkPartition("manga", "fruit2"));
 //            System.out.println(pg.inhTables("manga", "customers"));
 //            System.out.println(pg.inhTables("manga"));
-//            System.out.println(pg.nonInhTabs("manga"));
+            System.out.println(pg.nonInheritedTabs("manga"));
 //            List<Map<String, Object>> map = pg.partitionMap("manga", "customers");
 //            System.out.println(map);
 //            System.out.println(pg.partitionMap2("manga", "customers"));
