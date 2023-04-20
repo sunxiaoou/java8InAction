@@ -510,12 +510,19 @@ public class Postgres {
                     }
                     sb.append(", ");
                 }
-                for (Map.Entry<String, String> entry: constraints.entrySet()) {
-                    sb.append("CONSTRAINT ").append(entry.getKey()).append(' ').append(entry.getValue())
-                            .append(", ");
-                }
                 sb.delete(sb.length() - 2, sb.length());
-                sb.append(") PARTITION BY ").append(keyDef);
+                sb.append(')');
+                if (! constraints.isEmpty()) {
+                    sb.delete(sb.length() - 1, sb.length());
+                    sb.append(", ");
+                    for (Map.Entry<String, String> entry: constraints.entrySet()) {
+                        sb.append("CONSTRAINT ").append(entry.getKey()).append(' ').append(entry.getValue())
+                                .append(", ");
+                    }
+                    sb.delete(sb.length() - 2, sb.length());
+                    sb.append(')');
+                }
+                sb.append(" PARTITION BY ").append(keyDef);
             } else if (! isLeaf) {
                 sb.append("CREATE TABLE ").append(name).append(" PARTITION OF ").append(parent).append(' ')
                         .append(bound).append(" PARTITION BY ").append(keyDef);
