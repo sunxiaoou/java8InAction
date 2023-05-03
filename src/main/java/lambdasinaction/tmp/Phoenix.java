@@ -2,13 +2,12 @@ package lambdasinaction.tmp;
 
 import com.alibaba.druid.pool.DruidDataSource;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.PreparedStatement;
-import java.sql.Statement;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Properties;
+import java.util.function.Predicate;
 
 
 public class Phoenix {
@@ -35,12 +34,74 @@ public class Phoenix {
         DruidDataSource ds = new DruidDataSource();
         ds.setDriverClassName(driver);
         ds.setUrl(String.format("jdbc:phoenix:thin:url=http://%s:%d;serialization=PROTOBUF", hostName, port));;
+        this.conn = ds.getConnection();
 
         Properties props = new Properties();
         props.setProperty("phoenix.schema.isNamespaceMappingEnabled", "true");
         props.setProperty("phoenix.schema.mapSystemTablesToNamespace", "true");
-        this.conn = ds.getConnection();
         ds.setConnectProperties(props);
+    }
+
+    public List<String> getSchemas() throws SQLException {
+//        String sql = "SELECT * FROM SYSTEM.CATALOG";
+        String sql = "SELECT TABLE_SCHEM FROM SYSTEM.CATALOG GROUP BY TABLE_SCHEM";
+        List<String> result = new LinkedList<>();
+        try(Statement statement = conn.createStatement()) {
+            try (ResultSet rs = statement.executeQuery(sql)) {
+                while (rs.next()) {
+                    result.add(rs.getString("TABLE_SCHEM"));
+                }
+            }
+        }
+        return result;
+    }
+
+    public List<String> getTables(String schema) throws SQLException {
+        String sql;
+        if (schema == null) {
+            sql = "SELECT TABLE_NAME FROM SYSTEM.CATALOG " +
+                    "WHERE TABLE_SCHEM is null AND DATA_TYPE is null";
+        } else {
+            sql = String.format(
+                    "SELECT TABLE_NAME FROM SYSTEM.CATALOG " +
+                            "WHERE TABLE_SCHEM = '%s' AND DATA_TYPE is null", schema);
+        }
+        List<String> result = new LinkedList<>();
+        try(Statement statement = conn.createStatement()) {
+            try (ResultSet rs = statement.executeQuery(sql)) {
+                while (rs.next()) {
+                    result.add(rs.getString("TABLE_NAME"));
+                }
+            }
+        }
+        return result;
+    }
+
+    private ColumnMeta generateColumnMeta(ResultSetMetaData meta, int i) throws SQLException {
+        String columnLabel = meta.getColumnLabel(i);
+        int type = meta.getColumnType(i);
+        String typeName = meta.getColumnTypeName(i);
+        int length = meta.getPrecision(i);
+        int scale = meta.getScale(i);
+        int nullable = meta.isNullable(i);
+        return new ColumnMeta(columnLabel, type, typeName, (long) length, (long) length,
+                scale, nullable, null, null);
+    }
+
+    public List<ColumnMeta> getColumns(String schema, String name) throws SQLException {
+        String sql = "SELECT \"fruit_id\", \"price\" FROM \"manga\".\"fruit\" " +
+                "where 1=2";
+        List<ColumnMeta> result = new LinkedList<>();
+        try(Statement statement = conn.createStatement()) {
+            try (ResultSet rs = statement.executeQuery(sql)) {
+                ResultSetMetaData meta = rs.getMetaData();
+                for (int i = 1; i <= meta.getColumnCount(); i ++ ) {
+                    ColumnMeta column = generateColumnMeta(meta, i);
+                    result.add(column);
+                }
+            }
+        }
+        return result;
     }
 
     public void close() throws SQLException {
@@ -77,7 +138,11 @@ public class Phoenix {
         Phoenix db = new Phoenix("192.168.55.250", 8765,
                 "org.apache.phoenix.queryserver.client.Driver");
 
-        db.test2();
+//        db.test2();
+//        System.out.println(db.getSchemas());
+//        System.out.println(db.getTables(null));
+//        System.out.println(db.getTables("manga"));
+        System.out.println(db.getColumns("manga", "fruit"));
         db.close();
     }
 }
