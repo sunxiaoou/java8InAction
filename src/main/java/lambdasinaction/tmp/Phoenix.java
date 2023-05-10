@@ -36,10 +36,10 @@ public class Phoenix {
         ds.setUrl(String.format("jdbc:phoenix:thin:url=http://%s:%d;serialization=PROTOBUF", hostName, port));;
         this.conn = ds.getConnection();
 
-        Properties props = new Properties();
-        props.setProperty("phoenix.schema.isNamespaceMappingEnabled", "true");
-        props.setProperty("phoenix.schema.mapSystemTablesToNamespace", "true");
-        ds.setConnectProperties(props);
+//        Properties props = new Properties();
+//        props.setProperty("phoenix.schema.isNamespaceMappingEnabled", "true");
+//        props.setProperty("phoenix.schema.mapSystemTablesToNamespace", "true");
+//        ds.setConnectProperties(props);
     }
 
     public List<String> getSchemas() throws SQLException {
