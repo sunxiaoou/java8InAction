@@ -2,6 +2,7 @@ package lambdasinaction.tmp;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.NamespaceDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.io.compress.Compression;
@@ -20,8 +21,9 @@ public class HBase {
 
     public HBase(String host, int port) throws IOException {
         Configuration conf = HBaseConfiguration.create();
-        conf.set("hbase.zookeeper.quorum", host); // Specify ZooKeeper quorum address
-        conf.set("hbase.zookeeper.property.clientPort", "" + port);
+//        conf.set("hbase.zookeeper.quorum", host); // Specify ZooKeeper quorum address
+//        conf.set("hbase.zookeeper.property.clientPort", "" + port);
+//        conf.addResource("target/classes/lambdasinaction/tmp/hbase-site.xml");
         conn = ConnectionFactory.createConnection(conf);
         admin = conn.getAdmin();
     }
@@ -29,6 +31,24 @@ public class HBase {
     public void close() throws IOException {
         admin.close();
         conn.close();
+    }
+
+    public List<String> getNameSpaces() throws IOException {
+        List<String> spaces = new ArrayList<>();
+        NamespaceDescriptor[] descriptors = admin.listNamespaceDescriptors();
+        for (NamespaceDescriptor descriptor : descriptors) {
+            spaces.add(descriptor.getName());
+        }
+        return spaces;
+    }
+
+    public List<String> getTables(String space) throws IOException {
+        List<String> tables = new ArrayList<>();
+        List<TableDescriptor> descriptors = admin.listTableDescriptorsByNamespace(Bytes.toBytes(space));
+        for (TableDescriptor descriptor : descriptors) {
+            tables.add(descriptor.getTableName().getNameAsString());
+        }
+        return tables;
     }
 
     class HTable {
@@ -53,6 +73,16 @@ public class HBase {
 
         public void close() throws IOException {
             table.close();
+        }
+
+        public void truncate(String name) throws IOException {
+            TableName tableName = TableName.valueOf(name);
+            if (admin.tableExists(tableName)) {
+                if (admin.isTableEnabled(tableName)) {
+                    admin.disableTable(tableName);
+                }
+                admin.truncateTable(tableName, false);
+            }
         }
 
         public void drop(String name) throws IOException {
@@ -197,10 +227,12 @@ public class HBase {
 
     public static void main(String[] args) throws IOException {
         HBase db = new HBase("localhost", 2181);
-
+//        HBase db = new HBase("172.20.77.196", 2191);
+        System.out.println(db.getNameSpaces());
+        System.out.println(db.getTables("manga"));
 //        db.dropTable("myLittleHBaseTable");
 //        db.createTable("myLittleHBaseTable", "myLittleFamily");
-        db.test("myLittleHBaseTable");
+//        db.test("myLittleHBaseTable");
 //        db.test();
         db.close();
     }
