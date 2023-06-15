@@ -10,19 +10,17 @@ import org.apache.hadoop.hbase.regionserver.BloomType;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class HBase {
     Connection conn;
     Admin admin;
 
-    public HBase(String host, int port) throws IOException {
+    public HBase(String host, int port, String znode) throws IOException {
         Configuration conf = HBaseConfiguration.create();
-//        conf.set("hbase.zookeeper.quorum", host); // Specify ZooKeeper quorum address
-//        conf.set("hbase.zookeeper.property.clientPort", "" + port);
+        conf.set("hbase.zookeeper.quorum", host);
+        conf.set("hbase.zookeeper.property.clientPort", "" + port);
+        conf.set("zookeeper.znode.parent", znode);
 //        conf.addResource("target/classes/lambdasinaction/tmp/hbase-site.xml");
         conn = ConnectionFactory.createConnection(conf);
         admin = conn.getAdmin();
@@ -49,6 +47,33 @@ public class HBase {
             tables.add(descriptor.getTableName().getNameAsString());
         }
         return tables;
+    }
+
+    public Map<String, Map<String, Map<String, String>>> scanTable(String name) throws IOException {
+        TableName tableName = TableName.valueOf(name);
+        if (! admin.tableExists(tableName)) {
+            return null;
+        }
+        Map<String, Map<String, Map<String, String>>> tableData = new HashMap<>();
+        try (Table table = conn.getTable(TableName.valueOf(name))) {
+            try (ResultScanner scanner = table.getScanner(new Scan())) {
+                for (Result result: scanner) {
+                    NavigableMap<byte[], NavigableMap<byte[], byte[]>> familyMap = result.getNoVersionMap();
+                    Map<String, Map<String, String>> row = new HashMap<>();
+                    for (Map.Entry<byte[], NavigableMap<byte[], byte[]>> familyEntry: familyMap.entrySet()) {
+                        NavigableMap<byte[], byte[]> qualifierMap = familyEntry.getValue();
+                        Map<String, String> family = new TreeMap<>();
+                        for (Map.Entry<byte[], byte[]> qualifierEntry: qualifierMap.entrySet()) {
+                            family.put(Bytes.toString(qualifierEntry.getKey()),
+                                    Bytes.toString(qualifierEntry.getValue()));
+                        }
+                        row.put(Bytes.toString(familyEntry.getKey()), family);
+                    }
+                    tableData.put(Bytes.toString(result.getRow()), row);
+                }
+            }
+        }
+        return tableData;
     }
 
     class HTable {
@@ -226,10 +251,11 @@ public class HBase {
     }
 
     public static void main(String[] args) throws IOException {
-        HBase db = new HBase("localhost", 2181);
-//        HBase db = new HBase("172.20.77.196", 2191);
+//        HBase db = new HBase("localhost", 2181);
+        HBase db = new HBase("192.168.55.250", 2181, "/hbase");
         System.out.println(db.getNameSpaces());
         System.out.println(db.getTables("manga"));
+        System.out.println(db.scanTable("manga:fruit"));
 //        db.dropTable("myLittleHBaseTable");
 //        db.createTable("myLittleHBaseTable", "myLittleFamily");
 //        db.test("myLittleHBaseTable");
