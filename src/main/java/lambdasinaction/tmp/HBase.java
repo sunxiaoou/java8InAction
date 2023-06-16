@@ -12,6 +12,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import java.io.IOException;
 import java.util.*;
 
+// refer to org.apache.hadoop.hbase.client sample in https://hbase.apache.org/apidocs/index.html
 public class HBase {
     Connection conn;
     Admin admin;
@@ -49,13 +50,67 @@ public class HBase {
         return tables;
     }
 
-    public Map<String, Map<String, Map<String, String>>> scanTable(String name) throws IOException {
-        TableName tableName = TableName.valueOf(name);
+    public void createTable(String space, String name, String family) throws IOException {
+        TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
+        if (! admin.tableExists(tableName)) {
+            TableDescriptor tableDescriptor = TableDescriptorBuilder.newBuilder(tableName)
+                    .setColumnFamily(ColumnFamilyDescriptorBuilder.newBuilder(Bytes.toBytes(family))
+                            .setBloomFilterType(BloomType.ROWCOL)
+                            .setCompressionType(Compression.Algorithm.GZ).build())
+                    .build();
+            admin.createTable(tableDescriptor);
+        }
+    }
+
+    public void dropTable(String space, String name) throws IOException {
+        TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
+        if (admin.tableExists(tableName)) {
+            admin.disableTable(tableName);
+            admin.deleteTable(tableName);
+        }
+    }
+
+    public void truncateTable(String space, String name) throws IOException {
+        TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
+        if (admin.tableExists(tableName)) {
+            if (admin.isTableEnabled(tableName)) {
+                admin.disableTable(tableName);
+            }
+            admin.truncateTable(tableName, false);
+        }
+    }
+
+    public void putTable(String space, String name, Map<String, Map<String, Map<String, String>>> rows)
+            throws IOException {
+        TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
+        try (Table table = conn.getTable(tableName)) {
+            for (Map.Entry<String, Map<String, Map<String, String>>> rowEntry : rows.entrySet()) {
+                String row = rowEntry.getKey();
+                Put put = new Put(Bytes.toBytes(row));
+                Map<String, Map<String, String>> families = rowEntry.getValue();
+                for (Map.Entry<String, Map<String, String>> familyEntry : families.entrySet()) {
+                    String columnFamily = familyEntry.getKey();
+                    Map<String, String> qualifiers = familyEntry.getValue();
+                    for (Map.Entry<String, String> qualifierEntry : qualifiers.entrySet()) {
+                        String qualifier = qualifierEntry.getKey();
+                        String value = qualifierEntry.getValue();
+//                        System.out.println("Row: " + row + ", Column Family: " + columnFamily +
+//                                ", Qualifier: " + qualifier + ", Value: " + value);
+                        put.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(qualifier), Bytes.toBytes(value));
+                    }
+                }
+                table.put(put);
+            }
+        }
+    }
+
+    public Map<String, Map<String, Map<String, String>>> scanTable(String space, String name) throws IOException {
+        TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
         if (! admin.tableExists(tableName)) {
             return null;
         }
         Map<String, Map<String, Map<String, String>>> tableData = new HashMap<>();
-        try (Table table = conn.getTable(TableName.valueOf(name))) {
+        try (Table table = conn.getTable(tableName)) {
             try (ResultScanner scanner = table.getScanner(new Scan())) {
                 for (Result result: scanner) {
                     NavigableMap<byte[], NavigableMap<byte[], byte[]>> familyMap = result.getNoVersionMap();
@@ -76,178 +131,62 @@ public class HBase {
         return tableData;
     }
 
-    class HTable {
-        Table table;
-        String cf;
-
-        public HTable(String name, String cf) throws IOException {
-            TableName tableName = TableName.valueOf(name);
-            if (! admin.tableExists(tableName)) {
-                TableDescriptor tableDescriptor = TableDescriptorBuilder.newBuilder(tableName)
-                        .setColumnFamily(
-                                ColumnFamilyDescriptorBuilder.newBuilder(Bytes.toBytes(cf))
-                                        .setBloomFilterType(BloomType.ROWCOL)
-                                        .setCompressionType(Compression.Algorithm.GZ)
-                                        .build())
-                        .build();
-                admin.createTable(tableDescriptor);
-            }
-            table = conn.getTable(TableName.valueOf(name));
-            this.cf = cf;
-        }
-
-        public void close() throws IOException {
-            table.close();
-        }
-
-        public void truncate(String name) throws IOException {
-            TableName tableName = TableName.valueOf(name);
-            if (admin.tableExists(tableName)) {
-                if (admin.isTableEnabled(tableName)) {
-                    admin.disableTable(tableName);
-                }
-                admin.truncateTable(tableName, false);
-            }
-        }
-
-        public void drop(String name) throws IOException {
-            TableName tableName = TableName.valueOf(name);
-            if (admin.tableExists(tableName)) {
-                admin.disableTable(tableName);
-                admin.deleteTable(tableName);
-            }
-        }
-
-        public void put(List<Map<String, String>> rows) throws IOException {
-            for (Map<String, String> row : rows) {
-                Put p = new Put(Bytes.toBytes(row.get("ROW")));
-                for (Map.Entry<String, String> entry : row.entrySet()) {
-                    if (!entry.getKey().equals("ROW")) {
-                        p.addColumn(Bytes.toBytes(cf), Bytes.toBytes(entry.getKey()), Bytes.toBytes(entry.getValue()));
-                    }
-                }
-                table.put(p);
-            }
-        }
-
-        public String get(String pk, String col) throws IOException {
+    public String getCell(String space, String name, String pk, String cf, String col) throws IOException {
+        TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
+        try (Table table = conn.getTable(tableName)) {
             Get g = new Get(Bytes.toBytes(pk));
             Result r = table.get(g);
             byte[] value = r.getValue(Bytes.toBytes(cf), Bytes.toBytes(col));
             return Bytes.toString(value);
         }
-
-        public List<String> scan(String col) throws IOException {
-            Scan s = new Scan();
-            s.addColumn(Bytes.toBytes(cf), Bytes.toBytes(col));
-            ResultScanner scanner = table.getScanner(s);
-            List<String> rows = new ArrayList<>();
-            for (Result rr : scanner) {
-                rows.add(rr.toString());
-            }
-            scanner.close();
-            return rows;
-        }
     }
 
-    public void test() throws IOException {
-        List<Map<String, String>> list = new ArrayList<>();
-        Map<String, String> map1 = new HashMap<>();
-        map1.put("ROW", "101");
-        map1.put("name", "香瓜");
-        map1.put("price", "800.0");
-        list.add(map1);
+    public static Map<String, Map<String, Map<String, String>>> testData() {
+        Map<String, Map<String, Map<String, String>>> rows = new HashMap<>();
 
-        Map<String, String> map2 = new HashMap<>();
-        map2.put("ROW", "102");
-        map2.put("name", "草莓");
-        map2.put("price", "150.0");
-        list.add(map2);
+        Map<String, Map<String, String>> row101 = new HashMap<>();
+        Map<String, String> cf101 = new TreeMap<>();
+        cf101.put("name", "香瓜");
+        cf101.put("price", "800.0");
+        row101.put("cf", cf101);
+        rows.put("101", row101);
 
-        Map<String, String> map3 = new HashMap<>();
-        map3.put("ROW", "103");
-        map3.put("name", "苹果");
-        map3.put("price", "120.0");
-        list.add(map3);
+        Map<String, Map<String, String>> row102 = new HashMap<>();
+        Map<String, String> cf102 = new TreeMap<>();
+        cf102.put("name", "草莓");
+        cf102.put("price", "150.0");
+        row102.put("cf", cf102);
+        rows.put("102", row102);
 
-        HTable table = new HTable("fruit", "cf");
-        table.put(list);
-        System.out.println(table.get("103", "name"));
-        System.out.println(table.scan("price"));
-        table.close();
-    }
+        Map<String, Map<String, String>> row103 = new HashMap<>();
+        Map<String, String> cf103 = new TreeMap<>();
+        cf103.put("name", "苹果");
+        cf103.put("price", "120.0");
+        row103.put("cf", cf103);
+        rows.put("103", row103);
 
-    // https://hbase.apache.org/apidocs/index.html
-    public void test(String name) throws IOException {
-        Table table = conn.getTable(TableName.valueOf(name));
-        try {
+        Map<String, Map<String, String>> row104 = new HashMap<>();
+        Map<String, String> cf104 = new TreeMap<>();
+        cf104.put("name", "柠檬");
+        cf104.put("price", "200.0");
+        row104.put("cf", cf104);
+        rows.put("104", row104);
 
-            // To add to a row, use Put.  A Put constructor takes the name of the row
-            // you want to insert into as a byte array.  In HBase, the Bytes class has
-            // utility for converting all kinds of java types to byte arrays.  In the
-            // below, we are converting the String "myLittleRow" into a byte array to
-            // use as a row key for our update. Once you have a Put instance, you can
-            // adorn it by setting the names of columns you want to update on the row,
-            // the timestamp to use in your update, etc. If no timestamp, the server
-            // applies current time to the edits.
-            Put p = new Put(Bytes.toBytes("myLittleRow"));
+        Map<String, Map<String, String>> row105 = new HashMap<>();
+        Map<String, String> cf105 = new TreeMap<>();
+        cf105.put("name", "橙子");
+        cf105.put("price", "115.0");
+        row105.put("cf", cf105);
+        rows.put("105", row105);
 
-            // To set the value you'd like to update in the row 'myLittleRow', specify
-            // the column family, column qualifier, and value of the table cell you'd
-            // like to update.  The column family must already exist in your table
-            // schema.  The qualifier can be anything.  All must be specified as byte
-            // arrays as hbase is all about byte arrays.  Lets pretend the table
-            // 'myLittleHBaseTable' was created with a family 'myLittleFamily'.
-            p.addColumn(Bytes.toBytes("myLittleFamily"), Bytes.toBytes("someQualifier"),
-                    Bytes.toBytes("Some Value"));
+        Map<String, Map<String, String>> row106 = new HashMap<>();
+        Map<String, String> cf106 = new TreeMap<>();
+        cf106.put("name", "香蕉");
+        cf106.put("price", "110.0");
+        row106.put("cf", cf106);
+        rows.put("106", row106);
 
-            // Once you've adorned your Put instance with all the updates you want to
-            // make, to commit it do the following (The HTable#put method takes the
-            // Put instance you've been building and pushes the changes you made into
-            // hbase)
-            table.put(p);
-
-            // Now, to retrieve the data we just wrote. The values that come back are
-            // Result instances. Generally, a Result is an object that will package up
-            // the hbase return into the form you find most palatable.
-            Get g = new Get(Bytes.toBytes("myLittleRow"));
-            Result r = table.get(g);
-            byte[] value = r.getValue(Bytes.toBytes("myLittleFamily"), Bytes.toBytes("someQualifier"));
-
-            // If we convert the value bytes, we should get back 'Some Value', the
-            // value we inserted at this location.
-            String valueStr = Bytes.toString(value);
-            System.out.println("GET: " + valueStr);
-
-            // Sometimes, you won't know the row you're looking for. In this case, you
-            // use a Scanner. This will give you cursor-like interface to the contents
-            // of the table.  To set up a Scanner, do like you did above making a Put
-            // and a Get, create a Scan.  Adorn it with column names, etc.
-            Scan s = new Scan();
-            s.addColumn(Bytes.toBytes("myLittleFamily"), Bytes.toBytes("someQualifier"));
-            ResultScanner scanner = table.getScanner(s);
-            try {
-                // Scanners return Result instances.
-                // Now, for the actual iteration. One way is to use a while loop like so:
-                for (Result rr = scanner.next(); rr != null; rr = scanner.next()) {
-                    // print out the row we found and the columns we were looking for
-                    System.out.println("Found row: " + rr);
-                }
-
-                // The other approach is to use a foreach loop. Scanners are iterable!
-                // for (Result rr : scanner) {
-                //   System.out.println("Found row: " + rr);
-                // }
-            } finally {
-                // Make sure you close your scanners when you are done!
-                // Thats why we have it inside a try/finally clause
-                scanner.close();
-            }
-
-            // Close your table and cluster connection.
-        } finally {
-            if (table != null) table.close();
-        }
+        return rows;
     }
 
     public static void main(String[] args) throws IOException {
@@ -255,11 +194,12 @@ public class HBase {
         HBase db = new HBase("192.168.55.250", 2181, "/hbase");
         System.out.println(db.getNameSpaces());
         System.out.println(db.getTables("manga"));
-        System.out.println(db.scanTable("manga:fruit"));
-//        db.dropTable("myLittleHBaseTable");
-//        db.createTable("myLittleHBaseTable", "myLittleFamily");
-//        db.test("myLittleHBaseTable");
-//        db.test();
+        db.dropTable(null, "fruit");
+        db.createTable(null, "fruit", "cf");
+        Map<String, Map<String, Map<String, String>>> rows = testData();
+        db.putTable(null, "fruit", rows);
+        System.out.println(db.scanTable(null, "fruit"));
+        System.out.println(db.getCell(null, "fruit", "105", "cf", "name"));
         db.close();
     }
 }
