@@ -7,6 +7,8 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
 
 import java.net.InetSocketAddress;
 
@@ -32,6 +34,7 @@ public class Client {
                     @Override
                     public void initChannel(SocketChannel ch)
                         throws Exception {
+                        ch.pipeline().addLast(new LoggingHandler(LogLevel.DEBUG));
                         ch.pipeline().addLast(new CltHandler());
                     }
                 });
