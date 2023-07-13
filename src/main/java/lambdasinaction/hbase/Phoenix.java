@@ -28,8 +28,7 @@ public class Phoenix {
         this.conn = DriverManager.getConnection(url, props);
     }
 
-    public Phoenix(String hostName, int port, String driver)
-            throws SQLException, ClassNotFoundException {
+    public Phoenix(String hostName, int port, String driver) throws SQLException, ClassNotFoundException {
         Class.forName(driver);
         DruidDataSource ds = new DruidDataSource();
         ds.setDriverClassName(driver);
@@ -133,10 +132,9 @@ public class Phoenix {
 
     public static void main(String[] args) throws SQLException, ClassNotFoundException {
 //        Phoenix db = new Phoenix("localhost", 2181);
-//        Phoenix db = new Phoenix("localhost", 8765);
-//        Phoenix db = new Phoenix("192.168.55.250", 8765);
-        Phoenix db = new Phoenix("192.168.55.250", 8765,
-                "org.apache.phoenix.queryserver.client.Driver");
+        String driver = "org.apache.phoenix.queryserver.client.Driver";
+        Phoenix db = new Phoenix("192.168.55.250", 8765, driver);
+//        Phoenix db = new Phoenix("192.168.55.12", 8765, driver);
 
 //        db.test2();
 //        System.out.println(db.getSchemas());

@@ -42,6 +42,7 @@ public class HBase {
         for (NamespaceDescriptor descriptor : descriptors) {
             spaces.add(descriptor.getName());
         }
+        LOG.debug("spaces: {}", spaces);
         return spaces;
     }
 
@@ -51,6 +52,7 @@ public class HBase {
         for (TableDescriptor descriptor : descriptors) {
             tables.add(descriptor.getTableName().getNameAsString());
         }
+        LOG.debug("tables: {}", tables);
         return tables;
     }
 
@@ -194,16 +196,16 @@ public class HBase {
     }
 
     public static void main(String[] args) throws IOException {
-//        HBase db = new HBase("localhost", 2181);
+//        HBase db = new HBase("localhost", 2181, "/hbase");
         HBase db = new HBase("192.168.55.250", 2181, "/hbase");
-        System.out.println(db.getNameSpaces());
-        System.out.println(db.getTables("manga"));
-        db.dropTable(null, "fruit");
-        db.createTable(null, "fruit", "cf");
-        Map<String, Map<String, Map<String, String>>> rows = testData();
-        db.putTable(null, "fruit", rows);
-        System.out.println(db.scanTable(null, "fruit"));
-        System.out.println(db.getCell(null, "fruit", "105", "cf", "name"));
+        db.getNameSpaces();
+        db.getTables("manga");
+//        db.dropTable(null, "fruit");
+//        db.createTable("manga", "fruit", "cf");
+//        Map<String, Map<String, Map<String, String>>> rows = testData();
+//        db.putTable("manga", "fruit", rows);
+//        System.out.println(db.scanTable("manga", "fruit"));
+//        System.out.println(db.getCell("manga", "fruit", "105", "cf", "name"));
         db.close();
     }
 }
