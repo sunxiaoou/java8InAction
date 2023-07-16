@@ -1,4 +1,4 @@
-package lambdasinaction.tmp;
+package lambdasinaction.hbase;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
@@ -7,7 +7,12 @@ import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.regionserver.BloomType;
+import org.apache.hadoop.hbase.replication.ReplicationPeerConfig;
+import org.apache.hadoop.hbase.replication.ReplicationPeerDescription;
+import org.apache.hadoop.hbase.replication.TestReplicationEndpoint;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Pair;
+import org.apache.hadoop.hbase.util.Triple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +41,7 @@ public class HBase {
         conn.close();
     }
 
-    public List<String> getNameSpaces() throws IOException {
+    public List<String> listNameSpaces() throws IOException {
         List<String> spaces = new ArrayList<>();
         NamespaceDescriptor[] descriptors = admin.listNamespaceDescriptors();
         for (NamespaceDescriptor descriptor : descriptors) {
@@ -46,7 +51,7 @@ public class HBase {
         return spaces;
     }
 
-    public List<String> getTables(String space) throws IOException {
+    public List<String> listTables(String space) throws IOException {
         List<String> tables = new ArrayList<>();
         List<TableDescriptor> descriptors = admin.listTableDescriptorsByNamespace(Bytes.toBytes(space));
         for (TableDescriptor descriptor : descriptors) {
@@ -86,7 +91,29 @@ public class HBase {
         }
     }
 
-    public void putTable(String space, String name, Map<String, Map<String, Map<String, String>>> rows)
+    public void putRow(String space, String name, Pair<String, Map<String, Map<String, String>>> row)
+            throws IOException {
+        TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
+        try (Table table = conn.getTable(tableName)) {
+                String key = row.getFirst();
+                Put put = new Put(Bytes.toBytes(key));
+                Map<String, Map<String, String>> families = row.getSecond();
+            for (Map.Entry<String, Map<String, String>> familyEntry : families.entrySet()) {
+                String columnFamily = familyEntry.getKey();
+                Map<String, String> qualifiers = familyEntry.getValue();
+                for (Map.Entry<String, String> qualifierEntry : qualifiers.entrySet()) {
+                    String qualifier = qualifierEntry.getKey();
+                    String value = qualifierEntry.getValue();
+                    LOG.debug("Row: {}, column family: {}, qualifier: {}, value: {}",
+                            key, columnFamily, qualifier, value);
+                    put.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(qualifier), Bytes.toBytes(value));
+                }
+            }
+            table.put(put);
+        }
+    }
+
+    public void putRows(String space, String name, Map<String, Map<String, Map<String, String>>> rows)
             throws IOException {
         TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
         try (Table table = conn.getTable(tableName)) {
@@ -107,6 +134,13 @@ public class HBase {
                 }
                 table.put(put);
             }
+        }
+    }
+
+    public void deleteRow(String space, String name, String key) throws IOException {
+        TableName tableName = TableName.valueOf(space == null ? name : space + ':' + name);    // qualified name
+        try (Table table = conn.getTable(tableName)) {
+            table.delete(new Delete(Bytes.toBytes(key)));
         }
     }
 
@@ -147,64 +181,80 @@ public class HBase {
         }
     }
 
-    public static Map<String, Map<String, Map<String, String>>> testData() {
+    public List<String> listPeers() throws IOException {
+        List<String> peers = new ArrayList<>();
+        List<ReplicationPeerDescription> descriptions = admin.listReplicationPeers();
+        for (ReplicationPeerDescription descriptor : descriptions) {
+            peers.add(descriptor.getPeerId());
+        }
+        LOG.debug("peers: {}", peers);
+        return peers;
+    }
+
+    public void addPeer(String peerId, String clusterKey, String endpoint) throws IOException {
+        ReplicationPeerConfig peerConfig = ReplicationPeerConfig.newBuilder()
+                .setClusterKey(clusterKey)
+                .setReplicationEndpointImpl(endpoint)
+                .build();
+        admin.addReplicationPeer(peerId, peerConfig, false);
+    }
+
+    public void removePeer(String peerId) throws IOException {
+        admin.removeReplicationPeer(peerId);
+    }
+
+    public void test(String peerId) throws IOException {
+        ReplicationPeerConfig peerConfig = ReplicationPeerConfig.newBuilder()
+                .setClusterKey("localhost:2181:/hb2")
+                .setReplicationEndpointImpl(TestReplicationEndpoint.ReplicationEndpointForTest.class.getName())
+                .build();
+        admin.addReplicationPeer(peerId, peerConfig, false);
+
+        peerConfig = admin.getReplicationPeerConfig(peerId);
+        LOG.debug("peer: {}", peerConfig);
+    }
+
+    public static Pair<String, Map<String, Map<String, String>>> fruit(Triple<Integer, String, Float> triple) {
+        Map<String, Map<String, String>> families = new HashMap<>();
+        Map<String, String> family = new TreeMap<>();
+        family.put("name", triple.getSecond());
+        family.put("price", String.valueOf(triple.getThird()));
+        families.put("cf", family);
+        return new Pair<>(String.valueOf(triple.getFirst()), families);
+    }
+
+    public static Map<String, Map<String, Map<String, String>>> fruits() {
+        final Triple<Integer, String, Float>[] triples = new Triple[]{
+                new Triple<>(101, "香瓜", (float) 800.0),
+                new Triple<>(102, "草莓", (float) 150.0),
+                new Triple<>(103, "苹果", (float) 120.0),
+                new Triple<>(104, "柠檬", (float) 200.0),
+                new Triple<>(105, "橙子", (float) 115.0),
+                new Triple<>(106, "香蕉", (float) 110.0)
+        };
         Map<String, Map<String, Map<String, String>>> rows = new HashMap<>();
-
-        Map<String, Map<String, String>> row101 = new HashMap<>();
-        Map<String, String> cf101 = new TreeMap<>();
-        cf101.put("name", "香瓜");
-        cf101.put("price", "800.0");
-        row101.put("cf", cf101);
-        rows.put("101", row101);
-
-        Map<String, Map<String, String>> row102 = new HashMap<>();
-        Map<String, String> cf102 = new TreeMap<>();
-        cf102.put("name", "草莓");
-        cf102.put("price", "150.0");
-        row102.put("cf", cf102);
-        rows.put("102", row102);
-
-        Map<String, Map<String, String>> row103 = new HashMap<>();
-        Map<String, String> cf103 = new TreeMap<>();
-        cf103.put("name", "苹果");
-        cf103.put("price", "120.0");
-        row103.put("cf", cf103);
-        rows.put("103", row103);
-
-        Map<String, Map<String, String>> row104 = new HashMap<>();
-        Map<String, String> cf104 = new TreeMap<>();
-        cf104.put("name", "柠檬");
-        cf104.put("price", "200.0");
-        row104.put("cf", cf104);
-        rows.put("104", row104);
-
-        Map<String, Map<String, String>> row105 = new HashMap<>();
-        Map<String, String> cf105 = new TreeMap<>();
-        cf105.put("name", "橙子");
-        cf105.put("price", "115.0");
-        row105.put("cf", cf105);
-        rows.put("105", row105);
-
-        Map<String, Map<String, String>> row106 = new HashMap<>();
-        Map<String, String> cf106 = new TreeMap<>();
-        cf106.put("name", "香蕉");
-        cf106.put("price", "110.0");
-        row106.put("cf", cf106);
-        rows.put("106", row106);
-
+        for (Triple<Integer, String, Float> triple : triples) {
+            Pair<String, Map<String, Map<String, String>>> pair = fruit(triple);
+            rows.put(pair.getFirst(), pair.getSecond());
+        }
+        LOG.debug("fruits: {}", rows);
         return rows;
     }
 
     public static void main(String[] args) throws IOException {
-//        HBase db = new HBase("localhost", 2181, "/hbase");
-        HBase db = new HBase("192.168.55.250", 2181, "/hbase");
-        db.getNameSpaces();
-        db.getTables("manga");
+        HBase db = new HBase("localhost", 2181, "/hbase");
+//        HBase db = new HBase("192.168.55.250", 2181, "/hbase");
+        db.listNameSpaces();
+        db.listTables("manga");
+
+//        db.test("htest");
 //        db.dropTable(null, "fruit");
 //        db.createTable("manga", "fruit", "cf");
-//        Map<String, Map<String, Map<String, String>>> rows = testData();
-//        db.putTable("manga", "fruit", rows);
-//        System.out.println(db.scanTable("manga", "fruit"));
+//        db.truncateTable("manga", "fruit");
+//        db.putRows("manga", "fruit", fruits());
+//        db.putRow("manga", "fruit", fruit(new Triple<>(107, "🍐", (float) 115)));
+        db.deleteRow("manga", "fruit", "107");
+        System.out.println(db.scanTable("manga", "fruit"));
 //        System.out.println(db.getCell("manga", "fruit", "105", "cf", "name"));
         db.close();
     }

@@ -1,13 +1,12 @@
-package lambdasinaction.tmp;
+package lambdasinaction.hbase;
 
 import com.alibaba.druid.pool.DruidDataSource;
+import lambdasinaction.tmp.ColumnMeta;
 
 import java.sql.*;
-import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
-import java.util.function.Predicate;
 
 
 public class Phoenix {
