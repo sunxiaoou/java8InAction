@@ -9,7 +9,7 @@ import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.regionserver.BloomType;
 import org.apache.hadoop.hbase.replication.ReplicationPeerConfig;
 import org.apache.hadoop.hbase.replication.ReplicationPeerDescription;
-import org.apache.hadoop.hbase.replication.TestReplicationEndpoint;
+
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Triple;
@@ -203,17 +203,6 @@ public class HBase {
         admin.removeReplicationPeer(peerId);
     }
 
-    public void test(String peerId) throws IOException {
-        ReplicationPeerConfig peerConfig = ReplicationPeerConfig.newBuilder()
-                .setClusterKey("localhost:2181:/hb2")
-                .setReplicationEndpointImpl(TestReplicationEndpoint.ReplicationEndpointForTest.class.getName())
-                .build();
-        admin.addReplicationPeer(peerId, peerConfig, false);
-
-        peerConfig = admin.getReplicationPeerConfig(peerId);
-        LOG.debug("peer: {}", peerConfig);
-    }
-
     public static Pair<String, Map<String, Map<String, String>>> fruit(Triple<Integer, String, Float> triple) {
         Map<String, Map<String, String>> families = new HashMap<>();
         Map<String, String> family = new TreeMap<>();
@@ -243,19 +232,40 @@ public class HBase {
 
     public static void main(String[] args) throws IOException {
         HBase db = new HBase("localhost", 2181, "/hbase");
-//        HBase db = new HBase("192.168.55.250", 2181, "/hbase");
-        db.listNameSpaces();
-        db.listTables("manga");
 
-//        db.test("htest");
+        if (args.length > 0) {
+            if ("put".equals(args[0])) {
+                db.putRow("manga", "fruit", fruit(new Triple<>(107, "🍐", (float) 115)));
+                System.out.println(db.scanTable("manga", "fruit"));
+                return;
+            } else if ("delete".equals(args[0])) {
+                db.deleteRow("manga", "fruit", "107");
+                System.out.println(db.scanTable("manga", "fruit"));
+                return;
+            } else if ("scan".equals(args[0])) {
+                System.out.println(db.scanTable("manga", "fruit"));
+                return;
+            }
+        }
+
+//        HBase db = new HBase("192.168.55.250", 2181, "/hbase");
+//        db.listNameSpaces();
+//        db.listTables("manga");
+
 //        db.dropTable(null, "fruit");
 //        db.createTable("manga", "fruit", "cf");
 //        db.truncateTable("manga", "fruit");
 //        db.putRows("manga", "fruit", fruits());
 //        db.putRow("manga", "fruit", fruit(new Triple<>(107, "🍐", (float) 115)));
-        db.deleteRow("manga", "fruit", "107");
+//        db.deleteRow("manga", "fruit", "107");
         System.out.println(db.scanTable("manga", "fruit"));
-//        System.out.println(db.getCell("manga", "fruit", "105", "cf", "name"));
+        System.out.println(db.getCell("manga", "fruit", "105", "cf", "name"));
+//        db.addPeer("myPeer", "localhost:2181:/myPeer",
+//                "org.apache.hadoop.hbase.replication.TestReplicationEndpoint$ReplicationEndpointForTest");
+//        db.addPeer("dummy", "localhost:2181:/dummy",
+//                "org.apache.hadoop.hbase.replication.DummyReplicationEndpoint");
+//        db.removePeer("htest");
+//        db.listPeers();
         db.close();
     }
 }
